@@ -1,0 +1,213 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// --- Mocks ---
+
+vi.mock('./log.js', () => ({
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+const mockIsContainerRunning = vi.fn<(id: string) => boolean>();
+const mockKillContainer = vi.fn<(id: string, reason: string, onExit?: () => void) => void>();
+const mockWakeContainer = vi.fn();
+vi.mock('./container-runner.js', () => ({
+  isContainerRunning: (...args: unknown[]) => mockIsContainerRunning(args[0] as string),
+  killContainer: (...args: unknown[]) =>
+    mockKillContainer(args[0] as string, args[1] as string, args[2] as (() => void) | undefined),
+  wakeContainer: (...args: unknown[]) => mockWakeContainer(...args),
+}));
+
+const mockGetSessionsByAgentGroup = vi.fn();
+const mockGetSession = vi.fn();
+vi.mock('./db/sessions.js', () => ({
+  getSessionsByAgentGroup: (...args: unknown[]) => mockGetSessionsByAgentGroup(...args),
+  getSession: (...args: unknown[]) => mockGetSession(...args),
+}));
+
+const mockWriteSessionMessage = vi.fn();
+vi.mock('./session-manager.js', () => ({
+  writeSessionMessage: (...args: unknown[]) => mockWriteSessionMessage(...args),
+}));
+
+import { restartAgentGroupContainers, restartSessionContainer } from './container-restart.js';
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+// --- Helpers ---
+
+function makeSession(id: string, agentGroupId: string, status = 'active') {
+  return { id, agent_group_id: agentGroupId, status };
+}
+
+// --- Tests ---
+
+describe('restartAgentGroupContainers', () => {
+  it('skips sessions without a running container', () => {
+    mockGetSessionsByAgentGroup.mockReturnValue([makeSession('s1', 'g1'), makeSession('s2', 'g1')]);
+    mockIsContainerRunning.mockReturnValue(false);
+
+    const count = restartAgentGroupContainers('g1', 'test');
+
+    expect(count).toBe(0);
+    expect(mockKillContainer).not.toHaveBeenCalled();
+    expect(mockWriteSessionMessage).not.toHaveBeenCalled();
+  });
+
+  it('skips non-active sessions', () => {
+    mockGetSessionsByAgentGroup.mockReturnValue([makeSession('s1', 'g1', 'closed')]);
+    mockIsContainerRunning.mockReturnValue(true);
+
+    const count = restartAgentGroupContainers('g1', 'test');
+
+    expect(count).toBe(0);
+    expect(mockKillContainer).not.toHaveBeenCalled();
+  });
+
+  it('kills running containers and returns count', () => {
+    mockGetSessionsByAgentGroup.mockReturnValue([makeSession('s1', 'g1'), makeSession('s2', 'g1')]);
+    mockIsContainerRunning.mockImplementation((id) => id === 's1');
+
+    const count = restartAgentGroupContainers('g1', 'test');
+
+    expect(count).toBe(1);
+    expect(mockKillContainer).toHaveBeenCalledTimes(1);
+    expect(mockKillContainer).toHaveBeenCalledWith('s1', 'test', undefined);
+  });
+
+  it('does not write wake message when wakeMessage is omitted', () => {
+    mockGetSessionsByAgentGroup.mockReturnValue([makeSession('s1', 'g1')]);
+    mockIsContainerRunning.mockReturnValue(true);
+
+    restartAgentGroupContainers('g1', 'test');
+
+    expect(mockWriteSessionMessage).not.toHaveBeenCalled();
+    expect(mockKillContainer).toHaveBeenCalledWith('s1', 'test', undefined);
+  });
+
+  it('writes on_wake message and passes onExit callback when wakeMessage is provided', () => {
+    mockGetSessionsByAgentGroup.mockReturnValue([makeSession('s1', 'g1')]);
+    mockIsContainerRunning.mockReturnValue(true);
+
+    restartAgentGroupContainers('g1', 'test', 'Resuming.');
+
+    // Should write an on-wake message
+    expect(mockWriteSessionMessage).toHaveBeenCalledTimes(1);
+    const [agentGroupId, sessionId, msg] = mockWriteSessionMessage.mock.calls[0];
+    expect(agentGroupId).toBe('g1');
+    expect(sessionId).toBe('s1');
+    expect(msg.onWake).toBe(1);
+    expect(JSON.parse(msg.content).text).toBe('Resuming.');
+
+    // Should pass an onExit callback to killContainer
+    expect(mockKillContainer).toHaveBeenCalledTimes(1);
+    const onExit = mockKillContainer.mock.calls[0][2];
+    expect(typeof onExit).toBe('function');
+  });
+
+  it('onExit callback calls wakeContainer with refreshed session', () => {
+    mockGetSessionsByAgentGroup.mockReturnValue([makeSession('s1', 'g1')]);
+    mockIsContainerRunning.mockReturnValue(true);
+    const freshSession = makeSession('s1', 'g1');
+    mockGetSession.mockReturnValue(freshSession);
+
+    restartAgentGroupContainers('g1', 'test', 'Resuming.');
+
+    // Simulate container exit by calling the onExit callback
+    const onExit = mockKillContainer.mock.calls[0][2] as () => void;
+    onExit();
+
+    expect(mockGetSession).toHaveBeenCalledWith('s1');
+    expect(mockWakeContainer).toHaveBeenCalledWith(freshSession);
+  });
+
+  it('onExit callback does not wake if session no longer exists', () => {
+    mockGetSessionsByAgentGroup.mockReturnValue([makeSession('s1', 'g1')]);
+    mockIsContainerRunning.mockReturnValue(true);
+    mockGetSession.mockReturnValue(undefined);
+
+    restartAgentGroupContainers('g1', 'test', 'Resuming.');
+
+    const onExit = mockKillContainer.mock.calls[0][2] as () => void;
+    onExit();
+
+    expect(mockWakeContainer).not.toHaveBeenCalled();
+  });
+
+  it('handles multiple running sessions with wake message', () => {
+    mockGetSessionsByAgentGroup.mockReturnValue([makeSession('s1', 'g1'), makeSession('s2', 'g1')]);
+    mockIsContainerRunning.mockReturnValue(true);
+
+    const count = restartAgentGroupContainers('g1', 'test', 'Config updated.');
+
+    expect(count).toBe(2);
+    expect(mockKillContainer).toHaveBeenCalledTimes(2);
+    expect(mockWriteSessionMessage).toHaveBeenCalledTimes(2);
+
+    // Each session gets its own on-wake message
+    expect(mockWriteSessionMessage.mock.calls[0][1]).toBe('s1');
+    expect(mockWriteSessionMessage.mock.calls[1][1]).toBe('s2');
+  });
+});
+
+/**
+ * Restarting one session, and *knowing* when it is done.
+ *
+ * `/restart` used to answer "Agent rebuilt and restarted successfully" in under a second, because
+ * `killContainer` returns as soon as it has asked — the success line was written before the old
+ * container had stopped, and said the same thing when nothing had been running at all.
+ */
+describe('restartSessionContainer', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetSession.mockReturnValue({ id: 'sess-1', agent_group_id: 'ag-1', status: 'active' });
+    mockWakeContainer.mockResolvedValue(true);
+  });
+
+  it('does not resolve until the old container has actually stopped', async () => {
+    mockIsContainerRunning.mockReturnValue(true);
+    let releaseExit: (() => void) | undefined;
+    mockKillContainer.mockImplementation((_id, _reason, onExit) => {
+      releaseExit = onExit;
+    });
+
+    let settled = false;
+    const pending = restartSessionContainer('sess-1').then((ok) => {
+      settled = true;
+      return ok;
+    });
+
+    await Promise.resolve();
+    expect(settled, 'reported done while the container was still stopping').toBe(false);
+    expect(mockWakeContainer).not.toHaveBeenCalled();
+
+    releaseExit!();
+    expect(await pending).toBe(true);
+    expect(mockWakeContainer).toHaveBeenCalledTimes(1);
+  });
+
+  it('says nothing was restarted when nothing was running', async () => {
+    // The case that produced the sub-second "success": no container, so the kill was a no-op.
+    mockIsContainerRunning.mockReturnValue(false);
+    expect(await restartSessionContainer('sess-1')).toBe(false);
+    expect(mockKillContainer).not.toHaveBeenCalled();
+  });
+
+  it('reports failure when the replacement does not come up', async () => {
+    mockIsContainerRunning.mockReturnValue(true);
+    mockKillContainer.mockImplementation((_id, _reason, onExit) => onExit?.());
+    mockWakeContainer.mockResolvedValue(false);
+    expect(await restartSessionContainer('sess-1')).toBe(false);
+  });
+
+  it('gives up waiting rather than holding the reply open forever', async () => {
+    // A container that will not die must not leave the user with no answer at all.
+    vi.useFakeTimers();
+    mockIsContainerRunning.mockReturnValue(true);
+    mockKillContainer.mockImplementation(() => {});
+    const pending = restartSessionContainer('sess-1', 5_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await pending).toBe(true);
+    vi.useRealTimers();
+  });
+});

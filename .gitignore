@@ -1,0 +1,68 @@
+# Dependencies
+node_modules/
+.npm-cache/
+# pnpm content-addressable store (created when running in sandbox mode)
+.pnpm-store/
+# Build output
+dist/
+
+# Local data & auth
+store/
+data/
+logs/
+
+# Install-wide markdown knowledge base, when one is kept in-tree (default: ./memory)
+#
+# Anchored. An unanchored `memory/` matches a directory of that name at *any* depth, which silently
+# swallowed `src/memory/` and `src/host-mcp/builtins/memory/` — both tracked source. Already-tracked
+# files keep committing, so the only symptom was `git add` refusing them and taking the pre-commit
+# hook down with it.
+/memory/
+
+# Agent workspace — per-installation state, not tracked
+agent/
+
+# Composer-managed AGENTS.md artifacts (regenerated every spawn) and
+# per-group memory (AGENTS.local.md) must never be committed.
+**/AGENTS.local.md
+**/.agents-shared.md
+**/.agents-fragments/
+
+# Legacy Claude-era names (pre–AGENTS.md migration) — same role as above.
+**/CLAUDE.md
+**/CLAUDE.local.md
+**/.claude-shared.md
+**/.claude-fragments/
+**/.claude-shared/
+
+# Secrets
+*.keys.json
+.env
+.env*
+
+# Local config overlay (defaults live in config/default.jsonc)
+config/local.jsonc
+
+# Temp files
+.tmp-*
+
+# macOS service — setup writes ~/Library/LaunchAgents/com.luna-<slug>.plist
+launchd/com.luna.plist
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Skills system (local per-installation state)
+.luna/
+
+# Public artifacts and local audit output
+.astro/
+site-dist/
+output/
+*.tgz
+*.tsbuildinfo
+!/.env.example

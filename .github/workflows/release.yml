@@ -1,0 +1,82 @@
+name: Release
+
+# A manual rehearsal is the default. Publishing requires an explicit input,
+# a maintainer-enabled repository variable, and the npm environment approval.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the verified tarball after maintainer approval
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: macos-latest
+    env:
+      LUNA_PRIVACY_TERMS_JSON: ${{ secrets.LUNA_PRIVACY_TERMS_JSON }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
+        working-directory: container/agent-runner
+      - run: pnpm check:repository
+      - run: pnpm check:history
+      - run: brew install gitleaks
+      - run: gitleaks git --redact --log-opts=--all .
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm knip
+      - run: pnpm format:check
+      - run: pnpm test
+      - run: pnpm test:container
+      - run: pnpm audit --prod
+      - run: pnpm build
+      - run: pnpm docs:doctor && pnpm docs:build && pnpm docs:check-build
+      - run: pnpm smoke:package
+      - name: Prepare reviewed release bytes
+        run: |
+          mkdir -p release
+          npm pack --pack-destination release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: luna-npm-tarball
+          path: release/*.tgz
+          if-no-files-found: error
+
+  publish:
+    if: inputs.publish && github.ref == 'refs/heads/main' && vars.LUNA_NPM_PUBLISH_APPROVED == 'true'
+    needs: verify
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment: npm
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.22.0'
+          registry-url: https://registry.npmjs.org
+      - run: npm install --global npm@11.19.0
+      - uses: actions/download-artifact@v4
+        with:
+          name: luna-npm-tarball
+          path: release
+      - name: Publish through npm trusted publishing
+        run: npm publish release/*.tgz --access public --provenance

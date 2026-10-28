@@ -1,0 +1,147 @@
+{
+  "name": "@tenphi/luna",
+  "version": "0.1.15",
+  "description": "A macOS personal assistant with Apple services, isolated tools, natural conversations, and optional Akno knowledge.",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "main": "dist/index.js",
+  "bin": {
+    "luna": "bin/luna"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.setup.json --noEmit && tsc -p container/agent-runner/tsconfig.json --noEmit",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:fix": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "prepare": "husky",
+    "setup": "tsx setup/index.ts",
+    "setup:auto": "tsx setup/auto.ts",
+    "luna": "tsx src/cli/client.ts",
+    "chat": "tsx scripts/chat.ts",
+    "eval:source-grounding": "tsx scripts/eval-source-grounding.ts",
+    "eval:reference-capture": "tsx scripts/eval-reference-capture.ts",
+    "eval:topic-boundaries": "tsx scripts/eval-topic-boundaries.ts",
+    "eval:public-agent": "tsx scripts/eval-public-agent.ts",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "knip": "knip",
+    "knip:production": "knip --production",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:container": "cd container/agent-runner && bun test",
+    "test:all": "pnpm test && pnpm test:container",
+    "check:repository": "node scripts/check-repository-safety.mjs",
+    "check:history": "node scripts/check-repository-safety.mjs --history",
+    "smoke:package": "node scripts/smoke-package.mjs",
+    "docs:dev": "astro dev",
+    "docs:doctor": "cookbook doctor",
+    "docs:build": "astro build",
+    "docs:preview": "astro preview",
+    "prepack": "pnpm build && pnpm check:repository",
+    "docs:check-build": "cookbook check-build --out site-dist",
+    "lock:npm": "node scripts/update-npm-lock.mjs"
+  },
+  "dependencies": {
+    "@chat-adapter/telegram": "4.33.0",
+    "@clack/prompts": "1.2.0",
+    "@tenphi/akno-client": "0.19.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@onecli-sh/sdk": "0.5.0",
+    "better-sqlite3": "13.0.3",
+    "chat": "4.33.0",
+    "cron-parser": "5.5.0",
+    "diff": "8.0.3",
+    "imapflow": "1.6.6",
+    "kleur": "4.1.5",
+    "nodemailer": "10.1.7",
+    "zod": "4.6.7",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.0",
+    "@types/nodemailer": "^8.0.1",
+    "eslint": "^9.35.0",
+    "eslint-plugin-no-catch-all": "^1.1.0",
+    "globals": "^15.12.0",
+    "husky": "^9.1.7",
+    "knip": "^6.16.1",
+    "prettier": "^3.8.1",
+    "typescript-eslint": "^8.35.0",
+    "vitest": "^4.0.18",
+    "@tenphi/cookbook": "0.24.0",
+    "astro": "7.3.2"
+  },
+  "engines": {
+    "node": ">=22.22"
+  },
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "homepage": "https://luna.tenphi.me",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tenphi/luna.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tenphi/luna/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "darwin"
+  ],
+  "files": [
+    "bin/",
+    "src/",
+    "dist/",
+    "setup/",
+    "scripts/",
+    "container/",
+    "config/default.jsonc",
+    "tsconfig.json",
+    "pnpm-workspace.yaml",
+    ".nvmrc",
+    "THIRD_PARTY_NOTICES.md",
+    "!**/*.test.ts",
+    "!**/*.map",
+    "!**/*.tsbuildinfo",
+    "!**/node_modules/**",
+    "!**/dist/**",
+    "dist/**/*.js",
+    "!scripts/eval-*",
+    "!scripts/*e2e*",
+    "!scripts/*scheduled-report*",
+    "!scripts/backfill-*",
+    "!scripts/cleanup-sessions.sh",
+    "!scripts/q.*",
+    "tsconfig.setup.json",
+    "npm-shrinkwrap.json"
+  ],
+  "pnpm": {
+    "overrides": {
+      "fast-uri": "3.1.9",
+      "ip-address": "10.7.4",
+      "hono": "4.13.13",
+      "@hono/node-server": "1.19.15",
+      "qs": "6.16.0",
+      "proxy-addr": "2.0.8",
+      "body-parser": "2.3.0",
+      "esbuild": "0.28.2"
+    }
+  },
+  "overrides": {
+    "fast-uri": "3.1.9",
+    "ip-address": "10.7.4",
+    "hono": "4.13.13",
+    "@hono/node-server": "1.19.15",
+    "qs": "6.16.0",
+    "proxy-addr": "2.0.8",
+    "body-parser": "2.3.0",
+    "esbuild": "0.28.2"
+  }
+}

@@ -1,0 +1,50 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+
+const packageRoot = path.dirname(path.dirname(fs.realpathSync(fileURLToPath(import.meta.url))));
+const metadata = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+const checkout = fs.existsSync(path.join(packageRoot, '.git'));
+const materialized = fs.existsSync(path.join(packageRoot, '.luna-package-version'));
+const installRoot = checkout || materialized ? packageRoot : path.resolve(process.env.LUNA_HOME || path.join(os.homedir(), '.luna'));
+if (process.platform !== 'darwin') {
+  console.error('Luna requires a macOS host.');
+  process.exit(1);
+}
+if (!checkout && !materialized) {
+  if (installRoot === packageRoot || installRoot.startsWith(packageRoot + path.sep)) {
+    console.error('LUNA_HOME must be outside the installed npm package.');
+    process.exit(1);
+  }
+  fs.mkdirSync(installRoot, { recursive: true, mode: 0o700 });
+  const marker = path.join(installRoot, '.luna-package-version');
+  const installed = fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim() : '';
+  if (installed !== metadata.version) {
+    // Refresh shipped runtime assets. Local config, credentials and data use separate paths.
+    for (const name of ['bin', 'src', 'dist', 'setup', 'scripts', 'container', 'tsconfig.json', 'package.json', 'pnpm-workspace.yaml', '.nvmrc']) {
+      const source = path.join(packageRoot, name);
+      if (fs.existsSync(source)) fs.cpSync(source, path.join(installRoot, name), { recursive: true });
+    }
+    fs.mkdirSync(path.join(installRoot, 'config'), { recursive: true });
+    fs.copyFileSync(path.join(packageRoot, 'config/default.jsonc'), path.join(installRoot, 'config/default.jsonc'));
+    fs.writeFileSync(marker, metadata.version + '\n', { mode: 0o600 });
+  }
+  const dependencies = path.join(installRoot, 'node_modules');
+  let dependencyRoot = packageRoot;
+  while (!fs.existsSync(path.join(dependencyRoot, 'node_modules/tsx'))) {
+    const parent = path.dirname(dependencyRoot);
+    if (parent === dependencyRoot) throw new Error('Installed runtime dependencies are missing. Reinstall @tenphi/luna.');
+    dependencyRoot = parent;
+  }
+  const dependencyTarget = path.join(dependencyRoot, 'node_modules');
+  if (fs.existsSync(dependencies) && fs.lstatSync(dependencies).isSymbolicLink()
+      && fs.realpathSync(dependencies) !== fs.realpathSync(dependencyTarget)) fs.unlinkSync(dependencies);
+  if (!fs.existsSync(dependencies)) fs.symlinkSync(dependencyTarget, dependencies, 'dir');
+}
+const loader = path.join(installRoot, 'node_modules/tsx/dist/loader.mjs');
+const result = spawnSync(process.execPath, ['--import', loader, path.join(installRoot, 'src/cli/client.ts'), ...process.argv.slice(2)], { cwd: installRoot, stdio: 'inherit', env: process.env });
+if (result.error) console.error(`Luna could not start: ${result.error.message}`);
+process.exit(result.status ?? 1);

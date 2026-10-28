@@ -1,0 +1,183 @@
+{
+  // Committed install defaults. Override in config/local.jsonc (gitignored).
+  "install": {
+    "assistantName": "Luna",
+    "assistantHasOwnNumber": false,
+    "timezone": "UTC",
+    "container": {
+      "timeoutMs": 1800000,
+      "maxOutputSize": 10485760,
+      "idleTimeoutMs": 1800000,
+      "maxConcurrent": 5,
+      "maxMessagesPerPrompt": 10,
+      "installCjkFonts": false,
+    },
+    "onecli": {
+      "url": null,
+    },
+  },
+  // Who Luna will talk to. Written by setup; edit here to add or remove someone.
+  //
+  // The key is an internal reference you choose. It is the only name for that person in the install
+  // and it names their hot-memory page (`users/<key>`), so it deliberately derives from nothing
+  // external — changing a Telegram handle never renames a memory page.
+  //
+  //   "users": {
+  //     "ada": {
+  //       "name": "Ada Marlow",              // what the assistant calls them
+  //       "telegramHandle": "ada_marlow",            // no "@"; how an inbound message is matched
+  //       "memoryPage": "people/ada-marlow", // durable profile, linked from users/ada
+  //       "enabled": true,                       // false refuses messages, keeps everything else
+  //     },
+  //   },
+  //
+  // Anyone not listed here is refused, and the owner is told once so they can decide. There is no
+  // approve-from-chat path: admission is a decision recorded in this file.
+  "users": {},
+  // The one owner, by `users` key. Owner-only commands and approval cards resolve to this person.
+  // The host terminal is always privileged regardless, so a wrong value here cannot lock you out.
+  "owner": null,
+  "mcpPort": 18800,
+  "mcpServers": {},
+  "agent": {
+    "effort": "adaptive",
+    "skills": "all",
+    "packages": { "apt": [], "npm": [] },
+    "additionalMounts": [],
+    "context": {
+      "maxApproxTokens": 120000,
+      "keepRecentTurns": 12,
+      "summarization": "deterministic",
+      "promptCacheKey": "luna-main",
+      // Automatic topic segmentation of DM conversations. Detection runs on
+      // Decisions API when models.main is gpt-6-luna; other models use chat.
+      "topics": {
+        "enabled": true,
+        // "model" restores the base-model JSON classifier. Decisions avoids output generation.
+        "classifier": "decisions",
+        // Messages this soon after the last one continue without a classifier
+        // call. Deliberately short: real topic switches happen within minutes.
+        "continueWindowMinutes": 3,
+        // Topics listed in <recent-conversations> each turn (~60-100 tokens).
+        "injectCount": 4,
+        // Mirror closed topics to `conversations/` pages in memory.
+        "mirrorToMemory": true,
+        "summaryModel": "main",
+      },
+      // Inbound attachments are read by the runtime before the topic decision,
+      // so a caption-less PDF or photo reaches the classifier and the recall
+      // query as content instead of a filename. Text extraction is local
+      // (pdftotext / pandoc / tesseract); images and text-less scans get one
+      // description call on the memory model. Costs nothing on a turn with no
+      // attachments.
+      "attachments": {
+        "enabled": true,
+        // Ceiling for the whole stage, however many files arrived.
+        "deadlineMs": 20000,
+        "maxCharsPerAttachment": 4000,
+        // Whole <attachments> block in the agent's prompt.
+        "maxBlockChars": 12000,
+        // What the topic classifier and the recall query see.
+        "maxGistChars": 600,
+        "maxPdfPages": 20,
+        // Local OCR for images. The CPU-hungry step; turn off to skip it.
+        "ocrImages": true,
+        // One description call for images and text-less scans.
+        "describeImages": true,
+      },
+    },
+  },
+  "providers": {
+    "openai": {
+      "baseUrl": "https://api.openai.com/v1",
+      "api": "responses",
+      "apiKey": { "env": "OPENAI_API_KEY" },
+    },
+  },
+  // One model: the agent's own. Everything Luna's own background work needs — topic
+  // classification, episode summaries — runs on it too.
+  //
+  // There were six roles here. Five of them configured the *memory backend's* models on its
+  // behalf, which meant two copies of one choice that had to be kept agreeing: provider
+  // inheritance between roles, an assertion that embedding and expansion shared an endpoint, a
+  // formatter turning bare ids into `openai:<id>`, and a sync pass pushing all of it into another
+  // database every time the host started. Memory configures its own models now, in its own config,
+  // where nothing can disagree with it.
+  "models": {
+    "main": { "provider": "openai", "id": "gpt-6-luna" },
+    // Speech-to-text, reached at /v1/audio/transcriptions. Only used when the macOS recogniser
+    // cannot do the language on-device — see "voice" below. A local whisper.cpp or LM Studio
+    // server answers the same endpoint, so this does not have to mean a hosted model.
+    "transcribe": { "provider": "openai", "id": "gpt-transcribe" },
+  },
+  // Memory is Akno, running as its own launchd service (`akno service install`). It owns the
+  // knowledge base, the index, its own models and the nightly maintenance cycle — all configured
+  // in Akno's own config, not here. Luna configures where to reach it.
+  "memory": {
+    "enabled": false,
+    // Before each substantive user turn, ask memory for a small precision-first evidence bundle.
+    // Explicit memory tools remain available when this is false.
+    "autoRecall": true,
+    // Unset uses Akno's own default socket (~/.akno/akno.sock).
+    "socket": null,
+    // Appended to memory's standing rules on every digest this install makes. For what matters in
+    // your conversations specifically; unset is the normal case.
+    "mission": null,
+    // Learn from conversations: after a turn, hand what was said to memory and let it decide what
+    // lasts. `/learn off` turns it off for one session.
+    "digest": true,
+    // What to say when it wrote something: "pages" names them and how to undo; "off" says nothing.
+    "notify": "pages",
+  },
+  // Voice messages are transcribed on the host before the agent is woken, so a held-to-record
+  // note arrives as text the user spoke — patterns match it, memory learns from it, and the
+  // container never knows a microphone was involved.
+  //
+  // "auto" picks the recogniser from the languages below: if macOS has an on-device asset for
+  // every one of them, it uses that (free, instant, never leaves the Mac); if any is missing it
+  // uses models.transcribe, which identifies the language itself. macOS ships assets for far
+  // fewer languages than it claims to "support" — ru-RU, for one, has none — and recognising a
+  // language it lacks would mean uploading the audio to Apple, so Luna routes around it instead.
+  "voice": {
+    "enabled": true,
+    "backend": "auto",
+    // Most common first. macOS is asked for the first one; a single entry is also passed to the
+    // model as a hint, while two or more leave it to detect.
+    "languages": ["en-US"],
+    "maxDurationSec": 600,
+    "deadlineMs": 120000,
+  },
+  "apple": {
+    "enabled": true,
+    "apps": {
+      "calendar": { "enabled": true, "defaultCalendar": "Home", "safetyMode": "normal" },
+      "reminders": { "enabled": true, "defaultList": "Reminders", "safetyMode": "normal" },
+      "notes": { "enabled": true, "defaultFolder": null, "safetyMode": "normal" },
+      "contacts": { "enabled": true, "safetyMode": "normal" },
+      "messages": { "enabled": false, "safetyMode": "normal" },
+    },
+  },
+  "email": {
+    "enabled": false,
+    // Gmail over IMAP, authenticated by an app password per person. The alternative backend is a
+    // Gmail REST/OAuth one; the seam is `MailBackend`, so swapping it invalidates no ids or cache.
+    "backend": "gmail-imap",
+    // Reading, plus drafting. `create_draft` is in and `send_mail` is out on purpose: a draft lands
+    // in the person's own Gmail drafts where they review it, and a send cannot be taken back.
+    // There is no delete tool at any setting, and spam and trash are unreachable by construction.
+    "toolsAllow": [
+      "list_mailboxes",
+      "search_mail",
+      "read_thread",
+      "read_message",
+      "list_attachments",
+      "read_attachment",
+      "save_attachment",
+      "create_draft",
+      "mark_read",
+    ],
+    // Characters of one message body before it is truncated — with the exact call to continue it,
+    // never silently. Mailboxes themselves live on people: `users.<key>.email`.
+    "maxBodyChars": 4000,
+  },
+}

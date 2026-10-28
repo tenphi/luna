@@ -1,0 +1,4 @@
+# Host tests (src/, setup/) use vitest + better-sqlite3 on Node — run `pnpm test`.
+# Container tests (container/agent-runner/) use bun:test + bun:sqlite — run `bun test` here.
+[test]
+root = "./container/agent-runner"

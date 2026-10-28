@@ -1,0 +1,49 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/*.ts",
+        "!scripts/**/*.test.ts",
+        "setup/**/*.ts",
+        "!setup/**/*.test.ts",
+        "src/host-mcp/builtins/apple/shared/permission-primer.ts",
+        "src/host-mcp/builtins/apple/shared/permission-check.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "setup/**/*.ts",
+        "!setup/**/*.{js,d.ts}",
+        "scripts/**/*.ts"
+      ]
+    },
+    "container/agent-runner": {
+      "entry": [
+        "src/cli/luna.ts",
+        "src/mcp-tools/index.ts",
+        "src/mcp-http-relay.ts",
+        "src/evals/*.ts",
+        "scripts/*.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "scripts/**/*.ts"
+      ]
+    }
+  },
+  "ignoreExportsUsedInFile": true,
+  "ignoreIssues": {
+    "src/db/schema.ts": [
+      "exports"
+    ]
+  },
+  "ignoreBinaries": [
+    "security",
+    "container",
+    "launchctl",
+    "onecli",
+    "which",
+    "tar",
+    "osascript"
+  ]
+}

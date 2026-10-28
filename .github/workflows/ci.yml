@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    env:
+      LUNA_PRIVACY_TERMS_JSON: ${{ secrets.LUNA_PRIVACY_TERMS_JSON }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
+        working-directory: container/agent-runner
+      - name: Check public files and all reachable history
+        run: pnpm check:repository && pnpm check:history
+      - run: brew install gitleaks
+      - run: gitleaks git --redact --log-opts=--all .
+      - run: pnpm audit --prod
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm knip
+      - run: pnpm format:check
+      - run: pnpm test
+      - run: pnpm test:container
+      - name: Smoke installed npm package without local config or live services
+        run: pnpm smoke:package
