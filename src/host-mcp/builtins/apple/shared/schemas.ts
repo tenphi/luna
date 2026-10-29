@@ -4,6 +4,11 @@
  */
 import * as z from 'zod';
 
+import { isLink } from './notes-link.js';
+
+/** Rejected up front: EventKit silently drops a link it cannot parse. */
+export const linkSchema = z.string().refine(isLink, 'Must be an absolute URL, e.g. https://example.com/page');
+
 export const recurrenceSchema = z.object({
   frequency: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
   interval: z.number().int().min(1).default(1),

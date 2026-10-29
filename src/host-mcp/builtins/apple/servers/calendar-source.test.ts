@@ -81,6 +81,45 @@ describe('calendar source-field readback', () => {
     expect(result.verification).toEqual({ status: 'mismatch', fields: ['location'] });
   });
 
+  it('stores the link as the event URL and in the description, and verifies both', async () => {
+    const link = 'https://blackwater-bay.example/hearing';
+    const created = { ...initial, description: `Room 4.\n\n${link}`, url: link };
+    eventkit.createEvent.mockResolvedValue(created);
+    eventkit.getEvent.mockResolvedValue({ ...created, url: null });
+    const result = payload(
+      await tools().create_event!.handler({
+        summary: 'Hearing',
+        start_date: '2031-04-03T10:00',
+        end_date: '2031-04-03T11:00',
+        description: 'Room 4.',
+        url: link,
+      }),
+    );
+    expect(eventkit.createEvent).toHaveBeenCalledWith(
+      'Home',
+      'Hearing',
+      '2031-04-03T10:00',
+      '2031-04-03T11:00',
+      expect.objectContaining({ description: `Room 4.\n\n${link}`, url: link }),
+    );
+    expect(result.verification).toEqual({ status: 'mismatch', fields: ['url'] });
+  });
+
+  it('replaces the appended link on update', async () => {
+    const old = 'https://blackwater-bay.example/hearing';
+    const next = 'https://blackwater-bay.example/hearing-moved';
+    const linked = { ...initial, description: `Room 4.\n\n${old}`, url: old };
+    const moved = { ...initial, description: `Room 4.\n\n${next}`, url: next };
+    eventkit.getEvent.mockResolvedValueOnce(linked).mockResolvedValueOnce(moved);
+    eventkit.updateEvent.mockResolvedValue(moved);
+    const result = payload(await tools().update_event!.handler({ uid: 'event-17', url: next }));
+    expect(eventkit.updateEvent).toHaveBeenCalledWith(
+      'event-17',
+      expect.objectContaining({ description: `Room 4.\n\n${next}`, url: next }),
+    );
+    expect(result.verification.status).toBe('confirmed');
+  });
+
   it('flags a location filled externally when the source supplied none', async () => {
     eventkit.createEvent.mockResolvedValue(initial);
     eventkit.getEvent.mockResolvedValue({ ...initial, location: 'Old Hall' });

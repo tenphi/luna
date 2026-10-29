@@ -13,13 +13,18 @@ import * as z from 'zod';
 import { errorResult, textResult } from '../../shared/cli.js';
 import { assertEventInDefaultCalendar, requireDefault } from '../shared/defaults.js';
 import * as eventkit from '../shared/eventkit.js';
+import { joinNotes, normalizeLink, updatedNotes } from '../shared/notes-link.js';
 import { confirmArg, confirmGuard, isReadOnly } from '../shared/safety.js';
-import { recurrenceSchema } from '../shared/schemas.js';
+import { linkSchema, recurrenceSchema } from '../shared/schemas.js';
 import type { AppleAppConfig } from '../shared/types.js';
 
 const alertSchema = z.object({
   offsetMinutes: z.number().describe('Minutes before the event to alert (relative only; e.g. 15)'),
 });
+
+const urlArg = linkSchema.describe(
+  'Link (absolute URL). Stored as the event URL and appended to the description, since some calendars and apps never show the URL field — do not also paste it into description',
+);
 
 const timezoneArg = z
   .string()
@@ -45,7 +50,7 @@ export function createCalendarMcpServer(config: AppleAppConfig): McpServer {
 
   async function readBack(
     written: eventkit.CalendarEvent,
-    expected: Partial<Pick<eventkit.CalendarEvent, 'summary' | 'location' | 'description'>>,
+    expected: Partial<Pick<eventkit.CalendarEvent, 'summary' | 'location' | 'description' | 'url'>>,
   ): Promise<
     eventkit.CalendarEvent & {
       verification: { status: 'confirmed' | 'mismatch' | 'unavailable'; fields?: string[]; reason?: string };
@@ -117,23 +122,27 @@ export function createCalendarMcpServer(config: AppleAppConfig): McpServer {
         description: z.string().optional().describe('Description or notes for the event'),
         all_day: z.boolean().optional().describe('Whether this is an all-day event'),
         timezone: timezoneArg,
-        url: z.string().optional().describe('URL linked on the event'),
+        url: urlArg.optional(),
         alerts: z.array(alertSchema).optional().describe('Relative alerts before the event'),
         recurrence: recurrenceSchema.optional().describe('Recurrence rule for a repeating event'),
       },
     },
     async ({ summary, start_date, end_date, location, description, all_day, timezone, url, alerts, recurrence }) => {
       try {
+        const notes = joinNotes(description, url) ?? undefined;
+        const link = url === undefined ? undefined : normalizeLink(url);
         const created = await eventkit.createEvent(defaultCalendar(), summary, start_date, end_date, {
           location,
-          description,
+          description: notes,
           allDay: all_day,
           timezone,
-          url,
+          url: link,
           alerts,
           recurrence,
         });
-        return textResult(await readBack(created, { summary, location: location ?? null, description }));
+        return textResult(
+          await readBack(created, { summary, location: location ?? null, description: notes, url: link }),
+        );
       } catch (err) {
         return errorResult(err instanceof Error ? err.message : String(err));
       }
@@ -157,10 +166,19 @@ export function createCalendarMcpServer(config: AppleAppConfig): McpServer {
           .optional()
           .describe("New end date and time as local wall-clock (prefer '2031-05-14T15:00')"),
         location: z.string().nullable().optional().describe('New location (null to clear)'),
-        description: z.string().nullable().optional().describe('New description or notes (null to clear)'),
+        description: z
+          .string()
+          .nullable()
+          .optional()
+          .describe('New description or notes (null to clear); an attached url stays appended'),
         all_day: z.boolean().optional().describe('Whether this is an all-day event'),
         timezone: timezoneArg,
-        url: z.string().nullable().optional().describe('URL linked on the event (null to clear)'),
+        url: urlArg
+          .nullable()
+          .optional()
+          .describe(
+            'Link (absolute URL), stored as the event URL and appended to the description; replaces the previous link, null removes it',
+          ),
         alerts: z.array(alertSchema).nullable().optional().describe('Replace relative alerts (null or [] to clear)'),
         recurrence: recurrenceSchema
           .nullable()
@@ -183,22 +201,24 @@ export function createCalendarMcpServer(config: AppleAppConfig): McpServer {
     }) => {
       try {
         const existing = await loadInDefaultCalendar(uid);
+        const notes = updatedNotes({ notes: existing.description, url: existing.url }, { body: description, url });
+        const link = url === undefined || url === null ? url : normalizeLink(url);
         const updated = await eventkit.updateEvent(uid, {
           summary,
           startDate: start_date,
           endDate: end_date,
           location,
-          description,
+          description: notes,
           allDay: all_day,
           timezone,
           fallbackTimezone: existing.timeZone,
           existingStartDate: existing.startDate,
           existingEndDate: existing.endDate,
-          url,
+          url: link,
           alerts: alerts === null ? null : alerts === undefined ? undefined : alerts.length === 0 ? null : alerts,
           recurrence,
         });
-        return textResult(await readBack(updated, { summary, location, description }));
+        return textResult(await readBack(updated, { summary, location, description: notes, url: link }));
       } catch (err) {
         return errorResult(err instanceof Error ? err.message : String(err));
       }
