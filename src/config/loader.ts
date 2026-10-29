@@ -113,11 +113,16 @@ export function resolveSecretOrValue(value: SecretOrValue | undefined, processEn
   return fromFile || undefined;
 }
 
+/** Where `auth: "chatgpt"` providers send Responses calls unless `baseUrl` says otherwise. */
+export const CHATGPT_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex';
+
 export interface ResolvedProvider {
   name: string;
   kind: ProviderKind;
   baseUrl?: string;
   api?: 'responses' | 'chat-completions';
+  /** Set when the provider bills the local ChatGPT login rather than an API key. */
+  auth?: 'chatgpt';
   apiKey?: string;
   apiKeyEnv?: string;
   extraBody?: Record<string, unknown>;
@@ -132,6 +137,21 @@ export interface ResolvedModelRole {
 function resolveNamedProvider(name: string, cfg = loadLunaConfig()): ResolvedProvider {
   const entry: NamedProviderConfig | undefined = cfg.providers?.[name];
   const kind: ProviderKind = entry?.kind === 'llama-server-reranker' ? 'llama-server-reranker' : 'openai-compatible';
+  const extraBody =
+    entry?.extraBody && typeof entry.extraBody === 'object' ? (entry.extraBody as Record<string, unknown>) : undefined;
+
+  if (entry?.auth === 'chatgpt') {
+    // The login is read per request by the host proxy (providers/chatgpt.ts), never resolved here,
+    // so no API key can fall back in and travel to the container instead.
+    return {
+      name,
+      kind,
+      baseUrl: resolveSecretOrValue(entry.baseUrl ?? undefined) ?? CHATGPT_CODEX_BASE_URL,
+      api: 'responses',
+      auth: 'chatgpt',
+      extraBody,
+    };
+  }
 
   const configuredApiKeyEnv = entry?.apiKeyEnv?.trim() || undefined;
   let apiKey: string | undefined;
@@ -153,9 +173,6 @@ function resolveNamedProvider(name: string, cfg = loadLunaConfig()): ResolvedPro
     apiKey = process.env.OPENAI_API_KEY ?? dotenv.OPENAI_API_KEY;
     if (apiKey) apiKeyEnv = 'OPENAI_API_KEY';
   }
-
-  const extraBody =
-    entry?.extraBody && typeof entry.extraBody === 'object' ? (entry.extraBody as Record<string, unknown>) : undefined;
 
   return {
     name,
@@ -228,6 +245,7 @@ export function resolveRunnerProvider(name: string | null | undefined, cfg = loa
 export function resolveOpenAiProviderConfig(): {
   baseUrl?: string;
   api?: 'responses' | 'chat-completions';
+  auth?: 'chatgpt';
   apiKey?: string;
   model?: string;
   extraBody?: Record<string, unknown>;
@@ -236,6 +254,7 @@ export function resolveOpenAiProviderConfig(): {
   return {
     baseUrl: main.provider.baseUrl,
     ...(main.provider.api ? { api: main.provider.api } : {}),
+    ...(main.provider.auth ? { auth: main.provider.auth } : {}),
     apiKey: main.provider.apiKey,
     model: main.id,
     extraBody: main.provider.extraBody,

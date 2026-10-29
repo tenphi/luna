@@ -11,10 +11,12 @@
  */
 import OpenAI, { APIError } from 'openai';
 import type { ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions';
+import type { Response as ModelResponse, ResponseCreateParamsStreaming } from 'openai/resources/responses/responses';
 
 import { loadConfig, type RunnerMemoryModels } from '../../../config.js';
 import type { ImageAttachment } from '../../../image-attachments.js';
-import type { ContentPart } from '../types.js';
+import { responsesInput } from '../responses.js';
+import type { ChatMessage, ContentPart } from '../types.js';
 import { buildUserContent } from '../vision.js';
 
 /** Which background job is calling — decides the fallback when `models.memory` is unset. */
@@ -26,6 +28,8 @@ export interface ResolvedMemoryModel {
   model: string;
   /** True when no memory model was configured and we fell back to the main model. */
   fromMain: boolean;
+  /** Set when the endpoint serves only Responses (the host's ChatGPT proxy has no Chat Completions). */
+  api?: 'responses';
 }
 
 export interface MemoryChatMessage {
@@ -119,6 +123,7 @@ export function resolveMemoryModel(
     apiKey: env.OPENAI_API_KEY || 'sk-no-key-required',
     model: env.OPENAI_MODEL,
     fromMain: true,
+    ...(env.OPENAI_API === 'responses' ? { api: 'responses' as const } : {}),
   };
 }
 
@@ -188,6 +193,7 @@ export async function memoryChat(
     log(`No ${role} model configured`);
     return null;
   }
+  if (resolved.api === 'responses') return memoryResponse(resolved, messages, opts);
   const endpoint = endpointKey(resolved);
 
   const wantsJson = opts.json === true && !jsonModeUnsupported.has(endpoint);
@@ -262,6 +268,69 @@ export async function memoryChat(
     // A model with no vision head rejects the image parts rather than the whole
     // request shape. Retrying text-only beats losing the answer: a digest of the
     // filename and any OCR text is still better than nothing.
+    if (opts.images?.length && err instanceof APIError && err.status === 400) {
+      log(`Endpoint rejected image input (${resolved.model}) — retrying without images`);
+      return memoryChat(messages, { ...opts, images: undefined });
+    }
+    log(`Call failed (${resolved.model} at ${resolved.baseURL}): ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * {@link memoryChat} over Responses, for a main endpoint without Chat Completions. The ChatGPT
+ * backend accepts only streams and refuses `temperature`, so this path always streams and never
+ * sends one. Retries mirror the Chat Completions path.
+ */
+async function memoryResponse(
+  resolved: ResolvedMemoryModel,
+  messages: MemoryChatMessage[],
+  opts: MemoryChatOptions,
+): Promise<string | null> {
+  const endpoint = endpointKey(resolved);
+  const maxTokens = opts.maxTokens ?? 200;
+  const params = {
+    model: resolved.model,
+    input: responsesInput(
+      withImages(messages, opts.images).map((m) => ({ role: m.role, content: sanitizeContent(m.content) }) as ChatMessage),
+    ),
+    max_output_tokens: maxTokens,
+    ...(opts.json ? { text: { format: { type: 'json_object' } } } : {}),
+    // Labelling, not puzzles — see memoryChat.
+    ...(effortNoneUnsupported.has(endpoint) ? {} : { reasoning: { effort: 'none' } }),
+    store: false,
+    stream: true,
+    // responsesInput emits wire-shaped items, wider than the SDK's input union.
+  } as unknown as ResponseCreateParamsStreaming;
+
+  try {
+    const stream = await memoryClient(resolved).responses.create(params, { signal: opts.signal });
+    let response: ModelResponse | undefined;
+    for await (const event of stream) {
+      if (event.type === 'response.completed' || event.type === 'response.incomplete') response = event.response;
+    }
+    const content = (response?.output ?? [])
+      .flatMap((item) => (item.type === 'message' ? item.content : []))
+      .map((part) => (part.type === 'output_text' ? part.text : ''))
+      .join('')
+      .trim();
+    if (content) return content;
+
+    const reason = response?.incomplete_details?.reason ?? response?.status ?? 'no response';
+    log(`Empty response from ${resolved.model} (${reason})`);
+    if (!opts.retriedForLength && reason === 'max_output_tokens') {
+      log('Retrying with a larger token allowance');
+      return memoryChat(messages, { ...opts, maxTokens: maxTokens * 4, retriedForLength: true });
+    }
+    return null;
+  } catch (err) {
+    if (err instanceof APIError && err.status === 400 && mentionsParam(err, 'reasoning')) {
+      if (!effortNoneUnsupported.has(endpoint)) {
+        effortNoneUnsupported.add(endpoint);
+        log('Endpoint rejected reasoning effort — retrying without it');
+        return memoryChat(messages, opts);
+      }
+    }
     if (opts.images?.length && err instanceof APIError && err.status === 400) {
       log(`Endpoint rejected image input (${resolved.model}) — retrying without images`);
       return memoryChat(messages, { ...opts, images: undefined });

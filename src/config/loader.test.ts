@@ -209,6 +209,30 @@ describe('resolveModelRole', () => {
     clearConfigCache();
     expect(resolveModelRole('main').provider.name).toBe('openai');
   });
+
+  it('resolves a ChatGPT-login provider to the Codex backend without any API key', () => {
+    process.env.OPENAI_API_KEY = 'sk-must-not-leak';
+    fs.writeFileSync(
+      DEFAULT_PATH,
+      JSON.stringify({
+        providers: { openai: { auth: 'chatgpt', apiKey: { env: 'OPENAI_API_KEY' } } },
+        models: { main: { provider: 'openai', id: 'gpt-6-luna' } },
+      }),
+    );
+    clearConfigCache();
+    try {
+      expect(resolveModelRole('main').provider).toEqual({
+        name: 'openai',
+        kind: 'openai-compatible',
+        baseUrl: 'https://chatgpt.com/backend-api/codex',
+        api: 'responses',
+        auth: 'chatgpt',
+        extraBody: undefined,
+      });
+    } finally {
+      delete process.env.OPENAI_API_KEY;
+    }
+  });
 });
 
 describe('resolveOpenAiProviderConfig', () => {
