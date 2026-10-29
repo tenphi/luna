@@ -22,7 +22,7 @@ import { clearLiveness } from './session-liveness.js';
 import type { Session } from './types.js';
 import { prepareSessionForSpawn } from './container/spawn/prep.js';
 import { prepareMounts } from './container/spawn/assets.js';
-import { containerArguments } from './container/spawn/arguments.js';
+import { containerArguments, sessionApiEndpoint } from './container/spawn/arguments.js';
 
 type Running = { process: ChildProcess; containerName: string };
 const activeContainers = new Map<string, Running>();
@@ -44,6 +44,7 @@ async function launch(session: Session): Promise<void> {
       sessionDir: sessionDir(group.id, session.id),
       agentGroupId: group.id,
       hostEnv: process.env,
+      sessionApi: sessionApiEndpoint(group.id, session.id),
     }) ?? {};
   const name = `luna-agent-${randomUUID()}`;
   const arguments_ = await containerArguments(

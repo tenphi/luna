@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import type { IncomingMessage, ServerResponse } from 'http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -9,6 +9,7 @@ import { readStoredContainerConfig } from '../container-config.js';
 import { CONTAINER_HOST_GATEWAY } from '../container-runtime.js';
 import { getAgentGroup } from '../db/agent-groups.js';
 import { deliverSessionNow } from '../delivery.js';
+import { isChatGptProxyRequest, proxyChatGptResponses } from '../providers/chatgpt.js';
 import { prepareBuiltinProviders } from './builtin-provider.js';
 import { runAsCaller, SESSION_ID_HEADER } from './caller-context.js';
 import { registerSessionApi } from './session-api.js';
@@ -240,7 +241,14 @@ export async function startHostMcpSupervisor(): Promise<HostMcpSupervisorState |
     deliverSessionNow,
   );
 
-  const httpServer = app.listen(installConfig.port, host, () => {
+  // ChatGPT model calls stream raw bodies far above Express's JSON limit, so they skip the app.
+  const httpServer = createServer((req, res) => {
+    if (isChatGptProxyRequest(req)) void proxyChatGptResponses(req, res);
+    else app(req, res);
+  });
+  // `app.listen` routed a listen failure to its callback; keep it from becoming an uncaught event.
+  httpServer.once('error', (err) => console.error(`[host-mcp] listen failed: ${err.message}`));
+  httpServer.listen(installConfig.port, host, () => {
     console.error(`[host-mcp] listening on http://${host}:${installConfig.port}/mcp/:agentGroupId/:serverName`);
   });
 

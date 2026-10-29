@@ -98,6 +98,12 @@ export interface NamedProviderConfig {
   baseUrl?: string | null;
   /** Agent transport. Other OpenAI-compatible endpoints can select Chat Completions. */
   api?: 'responses' | 'chat-completions' | null;
+  /**
+   * `chatgpt` bills the ChatGPT plan Codex is signed in to on this Mac instead of an API key. The
+   * host proxies the agent's Responses calls and adds the login, so neither `apiKey` nor `api`
+   * applies, and `baseUrl` defaults to the Codex backend.
+   */
+  auth?: 'api-key' | 'chatgpt' | null;
   /** Secret ref or literal; prefer `{ env: "…" }` in local.jsonc. */
   apiKey?: SecretOrValue;
   /**

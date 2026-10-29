@@ -24,6 +24,27 @@ Luna uses one main language model for its agent and background conversation work
 
 The main agent uses OpenAI Responses with thinking enabled. Adaptive effort uses a small Decisions request once per turn, with a one-second deadline and a medium fallback. Set `agent.effort` to a fixed supported level to skip that selector. See [agent behavior](reproducibility.md) and the [official model reference](https://developers.openai.com/api/docs/models/gpt-6-luna). A compatible endpoint can select `providers.<name>.api: "chat-completions"` and its own model and provider parameters.
 
+## ChatGPT subscription
+
+The main model can use the ChatGPT plan that Codex is signed in to on this Mac instead of an API key. Sign in to Codex with a ChatGPT account, then add a provider with `auth: "chatgpt"` and point `models.main` at it:
+
+```jsonc
+{
+  "providers": {
+    "openai": { "baseUrl": "https://api.openai.com/v1", "apiKey": { "env": "OPENAI_API_KEY" } },
+    "chatgpt": { "auth": "chatgpt" },
+  },
+  "models": {
+    "main": { "provider": "chatgpt", "id": "gpt-6-luna" },
+    "transcribe": { "provider": "openai", "id": "gpt-transcribe" },
+  },
+}
+```
+
+The host reads Codex's login from `$CODEX_HOME/auth.json` (default `~/.codex`) on every model call and forwards the agent's Responses requests with it. The login never enters a container. Luna does not refresh it, because Codex rotates refresh tokens on use; keep the ChatGPT app or `codex login` signed in. `luna health` reports a missing or expired login.
+
+Keep transcription on an API-key provider: the subscription serves only the agent's Responses calls. It has no Decisions endpoint, so adaptive effort falls back to medium unless `agent.effort` is set, and topic routing uses the model classifier. Usage counts against the plan's limits rather than API billing.
+
 ## Inspect and change settings
 
 ```bash

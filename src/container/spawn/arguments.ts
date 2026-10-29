@@ -13,6 +13,14 @@ import type { AgentGroup, Session } from '../../types.js';
 
 const gateway = new OneCLI({ url: ONECLI_URL, apiKey: ONECLI_API_KEY });
 
+/** The session's Session API base URL, as the container addresses it, and its bearer token. */
+export function sessionApiEndpoint(agentGroupId: string, sessionId: string): { url: string; token: string } {
+  return {
+    url: `http://host.docker.internal:${buildHostMcpRegistry().port}/session/${agentGroupId}/${sessionId}`,
+    token: readOrCreatePairToken(agentGroupId, sessionTokenServerName(sessionId)),
+  };
+}
+
 export async function containerArguments(
   name: string,
   group: AgentGroup,
@@ -24,12 +32,11 @@ export async function containerArguments(
   const arguments_ = ['run', '--rm', '--name', name, '--label', CONTAINER_INSTALL_LABEL];
   const network = hostReachableNetwork();
   if (network) arguments_.push('--network', network);
-  const registry = buildHostMcpRegistry();
-  const token = readOrCreatePairToken(group.id, sessionTokenServerName(session.id));
+  const sessionApi = sessionApiEndpoint(group.id, session.id);
   const environment: Record<string, string> = {
     TZ: TIMEZONE,
-    LUNA_SESSION_API_URL: `http://host.docker.internal:${registry.port}/session/${group.id}/${session.id}`,
-    LUNA_SESSION_TOKEN: token,
+    LUNA_SESSION_API_URL: sessionApi.url,
+    LUNA_SESSION_TOKEN: sessionApi.token,
     ...readEnvFile(['TAVILY_API_KEY']),
     ...contribution.env,
   };

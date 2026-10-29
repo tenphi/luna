@@ -46,6 +46,17 @@ describe('formatProviderError', () => {
     expect(msg).toContain('OPENAI_API_KEY');
   });
 
+  it('detailed auth error through the ChatGPT proxy explains the login, not an API key', () => {
+    const err = new AuthenticationError(401, { message: 'The ChatGPT login has expired.' }, undefined, undefined);
+    const msg = formatProviderError(
+      err,
+      { baseURL: 'http://host.docker.internal:18800/session/g/s/chatgpt', model: 'gpt-6-luna' },
+      { detailed: true },
+    );
+    expect(msg).toContain('ChatGPT login has expired');
+    expect(msg).not.toContain('OPENAI_API_KEY');
+  });
+
   it('simplified auth error is generic', () => {
     const err = new AuthenticationError(401, undefined, 'invalid key', undefined);
     const msg = formatProviderError(err, ctx, { detailed: false });

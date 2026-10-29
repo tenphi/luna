@@ -288,6 +288,8 @@ export function formatProviderError(err: unknown, ctx: ProviderErrorContext, opt
   }
 
   if (err instanceof AuthenticationError) {
+    // The host's ChatGPT proxy has no API key; its 401 says what is wrong with the Codex login.
+    if (/\/chatgpt\/?$/.test(ctx.baseURL)) return `ChatGPT subscription rejected the request: ${err.message}`;
     return `Model server rejected the API key (401). Check OPENAI_API_KEY and OneCLI vault credentials. Endpoint: ${base}`;
   }
 

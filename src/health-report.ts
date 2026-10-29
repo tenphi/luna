@@ -25,6 +25,7 @@ import { readMailHealth } from './host-mcp/builtins/email/shared/health.js';
 import { buildHostMcpRegistry } from './host-mcp/registry.js';
 import { getHostMcpSupervisorState } from './host-mcp/supervisor.js';
 import { DEFAULT_ONECLI_URL, pollOneCliHealth } from './onecli-runtime.js';
+import { describeChatGptLoginProblem, readChatGptLogin, type ChatGptLoginState } from './providers/chatgpt.js';
 import { readErrorLogSinceBoot } from './host-boot.js';
 import { getServiceInfo } from './service/host-service.js';
 import { getLiveness } from './session-liveness.js';
@@ -65,6 +66,8 @@ export interface ModelRoleHealth {
   id: string | null;
   baseUrl: string | null;
   apiKeyPresent: boolean;
+  /** For `auth: "chatgpt"` providers, the state of Codex's login in place of an API key. */
+  chatgptLogin?: ChatGptLoginState['status'];
   reachability: 'ok' | 'unreachable' | 'skipped';
   enabled?: boolean;
   dimensions?: number | null;
@@ -540,7 +543,8 @@ async function collectModels(): Promise<ModelsHealthSection> {
   for (const role of MODEL_ROLES) {
     const resolved = resolveModelRole(role);
     const baseUrl = resolved.provider.baseUrl ?? null;
-    const apiKeyPresent = Boolean(resolved.provider.apiKey);
+    const chatgptLogin = resolved.provider.auth === 'chatgpt' ? readChatGptLogin().status : undefined;
+    const apiKeyPresent = chatgptLogin ? chatgptLogin === 'ok' : Boolean(resolved.provider.apiKey);
 
     let reachability: ModelRoleHealth['reachability'] = 'skipped';
     if (baseUrl) {
@@ -558,16 +562,21 @@ async function collectModels(): Promise<ModelsHealthSection> {
       id: resolved.id ?? null,
       baseUrl,
       apiKeyPresent,
+      ...(chatgptLogin ? { chatgptLogin } : {}),
       reachability,
     });
   }
 
   const problems: string[] = [];
+  let loginFailed = false;
   for (const r of roles) {
     if (!r.id) {
       problems.push(`${r.role}: no model id`);
     }
-    if (!r.apiKeyPresent && r.baseUrl) {
+    if (r.chatgptLogin && r.chatgptLogin !== 'ok') {
+      loginFailed = true;
+      problems.push(`${r.role}: ${describeChatGptLoginProblem(r.chatgptLogin)}`);
+    } else if (!r.apiKeyPresent && r.baseUrl) {
       // local endpoints often need no key; only warn when remote-ish and missing
       const host = (() => {
         try {
@@ -592,7 +601,7 @@ async function collectModels(): Promise<ModelsHealthSection> {
 
   let status: HealthStatus = 'ok';
   let detail = roles.map((r) => `${r.role}=${r.id ?? 'unset'}`).join(', ');
-  if (problems.some((p) => p.includes('unreachable') || p.includes('no model id'))) {
+  if (loginFailed || problems.some((p) => p.includes('unreachable') || p.includes('no model id'))) {
     status = 'fail';
     detail = problems.join('; ');
   } else if (problems.length > 0) {

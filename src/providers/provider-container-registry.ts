@@ -1,6 +1,12 @@
 /** Host contributions are evaluated for each container launch. */
 export type VolumeMount = { containerPath: string; hostPath: string; readonly: boolean };
-export type ProviderContainerContext = { agentGroupId: string; sessionDir: string; hostEnv: NodeJS.ProcessEnv };
+export type ProviderContainerContext = {
+  agentGroupId: string;
+  sessionDir: string;
+  hostEnv: NodeJS.ProcessEnv;
+  /** The session's Session API as the container reaches it, for providers the host proxies. */
+  sessionApi: { url: string; token: string };
+};
 export type ProviderContainerContribution = { env?: Record<string, string>; mounts?: VolumeMount[] };
 export type ProviderContainerConfigFn = (context: ProviderContainerContext) => ProviderContainerContribution;
 

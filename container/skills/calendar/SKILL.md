@@ -37,6 +37,7 @@ On a **new session**, the runtime may inject a `<calendar-agenda>` block for tha
 
 - Call `get_calendar_event` with `uid` to read full details including url, alerts, recurrence, and `timeZone`.
 - Use `update_calendar_event` with `uid` to change title, times, location, description, all-day, timezone, url, alerts, or recurrence.
+- Put a link in `url`, not in `description`. The host stores it as the event URL and appends it to the description, since some calendar accounts and apps never show the URL field. Say a link is attached only when the returned `description` contains it.
 - Use `search_calendar_events` when you only know a title keyword and need to discover `uid`s.
 - Alerts are **relative only** (`offsetMinutes` before the event). Absolute-date alarms are not exposed.
 - File attachments are not supported (no public EventKit API).

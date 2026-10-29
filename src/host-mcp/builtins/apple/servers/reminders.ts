@@ -12,9 +12,10 @@ import * as z from 'zod';
 
 import { errorResult, textResult } from '../../shared/cli.js';
 import { assertReminderInDefaultList, requireDefault } from '../shared/defaults.js';
+import { joinNotes, normalizeLink, updatedNotes } from '../shared/notes-link.js';
 import * as remindersEk from '../shared/reminders-eventkit.js';
 import { confirmArg, confirmGuard, isReadOnly } from '../shared/safety.js';
-import { recurrenceSchema } from '../shared/schemas.js';
+import { linkSchema, recurrenceSchema } from '../shared/schemas.js';
 import type { AppleAppConfig } from '../shared/types.js';
 
 /** A fixed instant, or minutes before the due date. Reminders.app writes the former. */
@@ -35,7 +36,9 @@ const startDateArg = z
     'Start/deferred-until date — rarely needed; the due date is the deadline. Reported back only when it differs from the due date.',
   );
 
-const urlArg = z.string().describe('URL to attach to the reminder');
+const urlArg = linkSchema.describe(
+  'Link to attach (absolute URL). Appended to the notes, the only place Reminders.app shows links — do not also paste it into body',
+);
 
 /** Big enough for any real list, small enough that a completed backlog cannot flood the turn. */
 const DEFAULT_LIST_LIMIT = 200;
@@ -142,11 +145,11 @@ export function createRemindersMcpServer(config: AppleAppConfig): McpServer {
       try {
         return textResult(
           await remindersEk.createReminder(defaultList(), name, {
-            body,
+            body: joinNotes(body, url) ?? undefined,
             dueDate: due_date,
             startDate: start_date,
             priority,
-            url,
+            url: url === undefined ? undefined : normalizeLink(url),
             alerts,
             recurrence,
           }),
@@ -164,26 +167,33 @@ export function createRemindersMcpServer(config: AppleAppConfig): McpServer {
       inputSchema: {
         uid: z.string().describe('Reminder uid (EventKit calendarItemIdentifier)'),
         name: z.string().optional().describe('New name for the reminder'),
-        body: z.string().nullable().optional().describe('New notes/body text (null to clear)'),
+        body: z
+          .string()
+          .nullable()
+          .optional()
+          .describe('New notes/body text (null to clear); an attached url stays appended'),
         due_date: dueDateArg.nullable().optional(),
         start_date: startDateArg.nullable().optional(),
         priority: z.number().optional().describe('New priority: 0 (none), 1 (high), 5 (medium), 9 (low)'),
-        url: urlArg.nullable().optional(),
+        url: urlArg
+          .nullable()
+          .optional()
+          .describe('Link (absolute URL) appended to the notes; replaces the previous link, null removes it'),
         alerts: z.array(alertSchema).nullable().optional().describe('Replaces every existing alert'),
         recurrence: recurrenceSchema.nullable().optional().describe('Replaces the existing repeat rule'),
       },
     },
     async ({ uid, name, body, due_date, start_date, priority, url, alerts, recurrence }) => {
       try {
-        await loadInDefaultList(uid);
+        const existing = await loadInDefaultList(uid);
         return textResult(
           await remindersEk.updateReminder(uid, {
             name,
-            body,
+            body: updatedNotes({ notes: existing.body, url: existing.url }, { body, url }),
             dueDate: due_date,
             startDate: start_date,
             priority,
-            url,
+            url: url === undefined || url === null ? url : normalizeLink(url),
             alerts,
             recurrence,
           }),

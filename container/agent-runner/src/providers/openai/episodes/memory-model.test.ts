@@ -274,6 +274,87 @@ describe('memoryChat', () => {
     });
   });
 
+  describe('over Responses', () => {
+    // The host's ChatGPT proxy: streaming Responses only, no Chat Completions, no temperature.
+    function sse(status: 'completed' | 'incomplete', text: string): Response {
+      const response = {
+        id: 'r1',
+        status,
+        ...(status === 'incomplete' ? { incomplete_details: { reason: 'max_output_tokens' } } : {}),
+        output: text ? [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }] : [],
+      };
+      return new Response(`data: ${JSON.stringify({ type: `response.${status}`, response })}\n\n`, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    }
+
+    beforeEach(() => {
+      process.env.OPENAI_API = 'responses';
+    });
+
+    afterEach(() => {
+      delete process.env.OPENAI_API;
+    });
+
+    it('resolves the main fallback as Responses-only', () => {
+      expect(resolveMemoryModel(undefined, { ...process.env })?.api).toBe('responses');
+    });
+
+    it('streams a Responses call shaped for the ChatGPT backend', async () => {
+      const urls: string[] = [];
+      globalThis.fetch = (async (url: string, init?: RequestInit) => {
+        urls.push(String(url));
+        bodies.push(JSON.parse(String(init?.body ?? '{}')));
+        return sse('completed', ' {"topic":"dentist"} ');
+      }) as typeof fetch;
+
+      const answer = await memoryChat(
+        [
+          { role: 'system', content: 'Classify.' },
+          { role: 'user', content: 'Move the dentist to Friday' },
+        ],
+        { json: true, maxTokens: 120, temperature: 0.4 },
+      );
+
+      expect(answer).toBe('{"topic":"dentist"}');
+      expect(urls).toEqual(['http://memory-model.test/v1/responses']);
+      expect(bodies[0]).toEqual({
+        model: 'tiny',
+        input: [
+          { role: 'system', content: 'Classify.' },
+          { role: 'user', content: 'Move the dentist to Friday' },
+        ],
+        max_output_tokens: 120,
+        text: { format: { type: 'json_object' } },
+        reasoning: { effort: 'none' },
+        store: false,
+        stream: true,
+      });
+    });
+
+    it('widens the allowance once when the answer was cut off', async () => {
+      stub(sse('incomplete', ''), sse('completed', 'ok'));
+
+      expect(await memoryChat([{ role: 'user', content: 'sum' }], { maxTokens: 50 })).toBe('ok');
+      expect(bodies.map((b) => b.max_output_tokens)).toEqual([50, 200]);
+    });
+
+    it('drops reasoning effort on a model that refuses it', async () => {
+      stub(
+        new Response(JSON.stringify({ error: { message: "Unsupported value: 'none' for reasoning.effort" } }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        }),
+        sse('completed', 'ok'),
+      );
+
+      expect(await memoryChat([{ role: 'user', content: 'sum' }])).toBe('ok');
+      expect(bodies[0]!.reasoning).toEqual({ effort: 'none' });
+      expect(bodies[1]).not.toHaveProperty('reasoning');
+    });
+  });
+
   describe('per-endpoint quirks', () => {
     it('does not let a quirk learned on one endpoint poison the other', async () => {
       // `chat` and `summary` can now resolve to different endpoints, so the

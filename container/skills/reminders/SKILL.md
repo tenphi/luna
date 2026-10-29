@@ -27,7 +27,8 @@ On a **new session**, the runtime may inject a `<reminders-agenda>` block for th
 - `dueDateAllDay: true` means the user set a day with no time. Report it as a day ("due Thursday"), never as 00:00. Writing works the same way round: `due_date: "14 May 2031"` is all-day, `"14 May 2031 at 6:40 PM"` is timed.
 - `recurrence` is a repeat rule you can now read *and* write (`{frequency, interval, daysOfWeek, endDate, occurrenceCount}`) — "remind me every Monday" is one `create_reminder`, not a `schedule_task`. `update_reminder` replaces the whole rule; `recurrence: null` clears it.
 - `alerts` are extra pings: `{offsetMinutes: 30}` (before the due date, so it needs one) or `{date: "…"}` for a fixed instant. A due date already alerts on every device — only add alerts when the user asked for another. `update_reminder` replaces the whole set; `alerts: null` clears it.
-- `url` and `body` carry links and notes. `start_date` is a deferred-until date almost nobody sets; leave it alone unless asked.
+- Put a link in `url`, not in `body`. Reminders.app never shows the EventKit URL, so the host appends the link to the notes, where it is visible and tappable. Say a link is attached only when the returned `body` contains it. An older reminder can have a `url` missing from `body` — the user cannot see it; `update_reminder` with that same `url` moves it into the notes. Links the user typed into the app's own URL field are invisible to you.
+- `start_date` is a deferred-until date almost nobody sets; leave it alone unless asked.
 
 ## List size
 
