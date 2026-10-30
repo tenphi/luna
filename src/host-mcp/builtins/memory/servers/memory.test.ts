@@ -156,6 +156,31 @@ describe('the memory tool surface', () => {
     expect(factListText({ status: 'ok' })).toBeNull();
   });
 
+  it('keeps a model fallback warning in the compact fact list, and tells the agent to pass it on', () => {
+    const text = factListText({
+      status: 'ok',
+      warnings: [
+        {
+          type: 'model_fallback',
+          role: 'expansion',
+          provider: 'subscription',
+          fallback_provider: 'hosted',
+          reason: 'rate_limited',
+          message: 'expansion used provider "hosted" because provider "subscription" hit a rate or usage limit',
+        },
+        // Nothing to say without a message; the line is skipped rather than invented.
+        { type: 'model_fallback' },
+      ],
+      text: 'Facts (claim · source line; read slug:line for exact wording):\npeople/bo-winters — Bo Winters\n  L3 Bo Winters insures the boat with Vulpine Mutual.',
+    });
+    expect(text?.split('\n').slice(0, 3)).toEqual([
+      'status: ok',
+      'warning: expansion used provider "hosted" because provider "subscription" hit a rate or usage limit',
+      '',
+    ]);
+    expect(tools().recall.description).toMatch(/model_fallback.*tell the user/i);
+  });
+
   it('exposes Akno 0.11 managed-memory retraction by exact memory id', () => {
     const forget = tools().forget;
     const schema = forget.inputSchema as { shape: Record<string, unknown> };

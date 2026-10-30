@@ -27,6 +27,8 @@ To send an original image, PDF or other stored file, use `send_file {memory: doc
 - `degraded` — part of the search was unavailable. **Absence proves nothing.** Do not tell the user they never mentioned something.
 - An error saying memory is not answering — an outage, not an empty memory. Say memory is unavailable and answer from this conversation only.
 
+A `warnings` entry with `type: "model_fallback"` (a `warning:` line in compact recall, a `<memory_fallback>` note in automatic recall) means memory could not reach its usual model provider and ran that call on its backup, for example the API key when the ChatGPT subscription hit a usage limit. The result is complete and `status` still applies. **Tell the user in one short sentence in your reply**, using its `message` for what fell back and why; do not repeat it for another call in the same reply.
+
 In question mode `coverage` names the parts of the question the results actually answer. **Do not answer the parts marked false.** Anything under `superseded` is historical, not current.
 
 A returned line may carry a `memory` qualification because it came from source-native retention rather than canonical page prose. Keep that qualification attached to the text:

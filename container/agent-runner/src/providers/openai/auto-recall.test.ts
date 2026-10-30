@@ -4,6 +4,7 @@ import {
   autoRecallContext,
   buildAutoRecallEvidenceBlock,
   buildHotMemoryBlock,
+  buildMemoryFallbackBlock,
   DEFAULT_AUTO_RECALL_BUDGET_TOKENS,
   HOT_MEMORY_SHARED_SLUG,
   loadPinnedHotMemoryPages,
@@ -137,6 +138,49 @@ describe('auto recall', () => {
       status: 'unavailable',
       reason: 'timeout',
     });
+  });
+
+  it('carries model fallback warnings beside the evidence, whatever the status', async () => {
+    const warning = {
+      type: 'model_fallback',
+      role: 'expansion',
+      provider: 'subscription',
+      fallback_provider: 'hosted',
+      reason: 'login_unavailable',
+      message: 'expansion used provider "hosted" because provider "subscription" has no usable login',
+    };
+    const result = await autoRecallContext(
+      bridge(
+        JSON.stringify({
+          status: 'ok',
+          results: [
+            { type: 'page', slug: 'people/ada-marlow', lines: [{ n: 2, text: 'Ada Marlow lives in Blackwater Bay.' }] },
+          ],
+          // One call can fall back twice; the user hears it once. Other warning kinds are not this note's.
+          warnings: [warning, warning, { type: 'something_else', message: 'not a fallback' }],
+        }),
+      ),
+      'Where does Ada live?',
+    );
+    expect(result.available && result.fallbacks).toEqual([warning.message]);
+    // The evidence block is unchanged: the note is the runtime's, not quoted page data.
+    expect(result.available && result.evidence).not.toContain('subscription');
+
+    const degraded = await autoRecallContext(
+      bridge(JSON.stringify({ status: 'degraded', results: [], warnings: [warning] })),
+      'Quartz?',
+    );
+    expect(degraded).toEqual({
+      available: false,
+      status: 'degraded',
+      reason: 'degraded',
+      fallbacks: [warning.message],
+    });
+
+    expect(buildMemoryFallbackBlock([warning.message, 'a <b> & c'])).toBe(
+      `<memory_fallback>\n${warning.message}\na &lt;b&gt; &amp; c\n</memory_fallback>`,
+    );
+    expect(buildMemoryFallbackBlock([])).toBe('');
   });
 
   it('keeps qualified evidence that finishes after the former prefetch deadline', async () => {

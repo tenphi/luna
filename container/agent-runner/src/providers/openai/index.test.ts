@@ -12,6 +12,7 @@ import { PROCESS_UPDATE_MARKER } from '../../reply-contract.js';
 import type { ProviderEvent } from '../types.js';
 import type { OpenAITool } from './tools/builtin.js';
 import type { ChatMessage } from './types.js';
+import type { RecallBridge } from './auto-recall.js';
 import { loadHistory, saveHistory, setSessionsDirForTests, sessionExists } from './session-store.js';
 
 // A fake streaming completion: each queued "turn" is a list of stream chunks.
@@ -709,6 +710,64 @@ describe('OpenAIProvider agent loop', () => {
     const recallIdx = capturedMessages.indexOf(recallMsg!);
     const userIdx = capturedMessages.findIndex((m) => m.role === 'user' && m.content === 'What is 2+2?');
     expect(userIdx).toBe(recallIdx + 1);
+    // No fallback, no note: an ordinary turn keeps the preamble it always had.
+    expect(String(recallMsg?.content)).not.toContain('memory_fallback');
+  });
+
+  it('tells the agent when automatic recall ran on memory’s backup model provider', async () => {
+    let capturedMessages: Array<{ role: string; content: unknown }> = [];
+    const message = 'expansion used provider "hosted" because provider "subscription" hit a rate or usage limit';
+
+    class FallbackRecallProvider extends OpenAIProvider {
+      constructor() {
+        super({ model: 'test-model', mcpServers: { memory: { command: 'bun', args: ['mcp-http-relay.ts'] } } });
+        (this as unknown as { bridge: RecallBridge }).bridge = {
+          has: () => false,
+          call: async () => 'unused',
+          callRaw: async () =>
+            JSON.stringify({
+              ...JSON.parse(autoRecallResult()),
+              warnings: [
+                {
+                  type: 'model_fallback',
+                  role: 'expansion',
+                  provider: 'subscription',
+                  fallback_provider: 'hosted',
+                  reason: 'rate_limited',
+                  message,
+                },
+              ],
+            }),
+        };
+        this.client = {
+          chat: {
+            completions: {
+              create: async (params: Record<string, unknown>) => {
+                capturedMessages = params.messages as Array<{ role: string; content: unknown }>;
+                return makeStream([textDelta('Ada prefers mornings.')]);
+              },
+            },
+          },
+        } as ChatCompletionsClient;
+      }
+
+      protected async ensureTools(): Promise<OpenAITool[]> {
+        return [];
+      }
+    }
+
+    const query = new FallbackRecallProvider().query({ prompt: 'When does Ada like to meet?', cwd: agentDir });
+    query.end();
+    await collect(query.events);
+
+    const recall = String(
+      capturedMessages.find((m) => m.role === 'user' && String(m.content).includes('<memory_evidence'))?.content,
+    );
+    expect(recall).toContain(`<memory_fallback>\n${message}\n</memory_fallback>`);
+    expect(recall).toMatch(/memory_fallback> note is from the runtime.*Tell the user/s);
+    // The evidence is still injected as before; the note sits beside it, outside the quoted block.
+    expect(recall).toContain('Ada Marlow prefers morning meetings.');
+    expect(recall.indexOf('<memory_fallback>\n')).toBeGreaterThan(recall.indexOf('</memory_evidence>'));
   });
 
   it('can disable automatic recall without disabling the memory server', async () => {

@@ -50,3 +50,5 @@ luna config memory set --enabled false
 Disabling automatic recall leaves explicit tools available. Disabling digest stops background conversation learning. Disabling memory removes the integration; ordinary chat, Apple tools, and email still work.
 
 An unavailable service is reported as unavailable evidence. Luna must not interpret a timeout as proof that your knowledge contains nothing about the question. Troubleshoot Akno with its own `akno doctor` and `akno dream status`; Luna does not repair or resume Akno maintenance.
+
+When Akno answers a call on its fallback provider, for example the API key when its ChatGPT subscription has hit a usage limit, the result carries a `model_fallback` warning. Luna passes the warning to the agent, including from automatic recall, and the agent mentions it in its reply. The answer itself is unaffected. Akno's [configuration guide](https://akno.tenphi.me/configuration) explains when it falls back.
