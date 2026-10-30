@@ -106,6 +106,10 @@ async function recallFacts(input: Record<string, unknown>) {
  * would be escaped and every fact repeated as structured fields, which is the size it exists to
  * save — so only the status lines travel with it. A service too old for the format answers with
  * cards and no `text`, and those go out unchanged.
+ *
+ * `warnings` is one of those lines. Every other tool hands the whole result over, so a model call
+ * memory served through its fallback provider is visible there already; dropping it here would make
+ * the compact format the one place the user is never told.
  */
 export function factListText(result: {
   status: string;
@@ -113,6 +117,7 @@ export function factListText(result: {
   coverage?: Record<string, boolean>;
   note?: string;
   memory_view?: string;
+  warnings?: Array<{ message?: unknown }>;
   text?: string;
 }): string | null {
   if (typeof result.text !== 'string') return null;
@@ -125,6 +130,9 @@ export function factListText(result: {
     head.push(`coverage: ${coverage.map(([part, covered]) => `${part} ${covered ? 'yes' : 'no'}`).join('; ')}`);
   }
   if (result.note) head.push(`note: ${result.note}`);
+  for (const warning of result.warnings ?? []) {
+    if (typeof warning?.message === 'string' && warning.message) head.push(`warning: ${warning.message}`);
+  }
   return `${head.join('\n')}\n\n${result.text}`;
 }
 
@@ -524,8 +532,10 @@ export function createMemoryMcpServer(): McpServer {
         'files. Results carry page and line addresses, so a claim taken from them can be cited and a ' +
         'claim absent from them should not be made. Read `status`: "empty" means memory genuinely holds ' +
         'nothing on this and you may say so; "degraded" means part of the search was unavailable, so ' +
-        'absence proves nothing. In question mode `coverage` says which parts of the question the ' +
-        'results actually answer — do not answer the parts marked false. Anything under `superseded` is ' +
+        'absence proves nothing. A `model_fallback` warning means memory ran a model call on its backup ' +
+        'provider: the result stands, but tell the user in one short sentence. In question mode ' +
+        '`coverage` says which parts of the question the results actually answer — do not answer the ' +
+        'parts marked false. Anything under `superseded` is ' +
         'historical, not current. A line with an `observation` qualification is a derived pattern, ' +
         'not direct authored fact: use it only when its status is `eligible`, and keep its leaf ' +
         '`evidence` when explaining support. A line with a `memory` qualification is source-native ' +
@@ -533,7 +543,7 @@ export function createMemoryMcpServer(): McpServer {
         'used only for the selected `memory_view`, preserving its source, commitment and disposition, ' +
         'and must not be restated as an ordinary fact. `format: "facts"` returns derived facts, each ' +
         'with the `slug:line` it came from, instead of cards — about a tenth of the size, with the same ' +
-        '`status` and `coverage` rules.',
+        '`status`, `coverage` and `warning` rules.',
       inputSchema: {
         query: z.string().describe('What you want to know, in the user’s own words where possible'),
         mode: z

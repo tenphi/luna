@@ -52,11 +52,14 @@ export type AutoRecallContext =
       budgetUsed: number;
       qualificationRun: boolean;
       referenceResolution?: AutoRecallReferenceResolution;
+      /** Memory's own `model_fallback` messages: a model call it ran on its backup provider. */
+      fallbacks?: string[];
     }
   | {
       available: false;
       status: 'degraded' | 'unavailable';
       reason: 'missing-tool' | 'timeout' | 'error' | 'degraded' | 'unavailable';
+      fallbacks?: string[];
     };
 
 /** Skip retrieval for acknowledgements, including acks surrounded by punctuation or emoji. */
@@ -158,6 +161,7 @@ interface ContextOutputLike {
   budget_used?: unknown;
   memory_view?: unknown;
   activation?: { selected?: unknown; qualification_run?: unknown; reference_resolution?: unknown };
+  warnings?: unknown;
 }
 
 const REFERENCE_RESOLUTIONS = ['not_needed', 'resolved', 'ambiguous', 'unresolved'] as const;
@@ -333,6 +337,33 @@ export function buildAutoRecallEvidenceBlock(
   return `<memory_evidence untrusted="true"${statusAttribute}${memoryViewAttribute}>\n${sections.join('\n\n')}\n</memory_evidence>`;
 }
 
+/**
+ * The messages of memory's `model_fallback` warnings, deduplicated.
+ *
+ * Memory names the role, both providers and the reason itself, and says nothing about the query or
+ * the knowledge base, so the message is the whole of what the user needs to hear. Anything without
+ * a string message is dropped rather than guessed at.
+ */
+function fallbackMessages(warnings: unknown): string[] {
+  if (!Array.isArray(warnings)) return [];
+  const messages = warnings.flatMap((warning) => {
+    const value = warning as { type?: unknown; message?: unknown } | null;
+    return value?.type === 'model_fallback' && typeof value.message === 'string' && value.message
+      ? [value.message]
+      : [];
+  });
+  return [...new Set(messages)];
+}
+
+/**
+ * Said apart from the evidence block. That block is quoted page data the agent must never take
+ * direction from; this is the runtime telling it what happened to the call that fetched it.
+ */
+export function buildMemoryFallbackBlock(messages: string[]): string {
+  if (messages.length === 0) return '';
+  return `<memory_fallback>\n${messages.map((message) => escapeEvidence(message)).join('\n')}\n</memory_fallback>`;
+}
+
 function parseAutoRecallContext(raw: string): AutoRecallContext {
   if (isMcpError(raw)) return { available: false, status: 'unavailable', reason: 'error' };
 
@@ -343,8 +374,10 @@ function parseAutoRecallContext(raw: string): AutoRecallContext {
     return { available: false, status: 'unavailable', reason: 'error' };
   }
 
+  const fallbacks = fallbackMessages(parsed.warnings);
+  const withFallbacks = fallbacks.length > 0 ? { fallbacks } : {};
   const status = parsed.status;
-  if (status === 'unavailable') return { available: false, status, reason: 'unavailable' };
+  if (status === 'unavailable') return { available: false, status, reason: 'unavailable', ...withFallbacks };
   if (status !== 'ok' && status !== 'empty' && status !== 'degraded') {
     return { available: false, status: 'unavailable', reason: 'error' };
   }
@@ -362,7 +395,7 @@ function parseAutoRecallContext(raw: string): AutoRecallContext {
   const results = Array.isArray(parsed.results) ? (parsed.results as ContextResultLike[]) : [];
   const evidence = buildAutoRecallEvidenceBlock(results, status, memoryView);
   if (status === 'degraded' && !evidence) {
-    return { available: false, status, reason: 'degraded' };
+    return { available: false, status, reason: 'degraded', ...withFallbacks };
   }
 
   return {
@@ -377,6 +410,7 @@ function parseAutoRecallContext(raw: string): AutoRecallContext {
     ...(isReferenceResolution(parsed.activation?.reference_resolution)
       ? { referenceResolution: parsed.activation.reference_resolution }
       : {}),
+    ...withFallbacks,
   };
 }
 
