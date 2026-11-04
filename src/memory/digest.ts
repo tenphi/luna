@@ -124,6 +124,7 @@ type RetainInput = Parameters<AknoClient['retain']>[0];
 type RetainSource = Extract<RetainInput['sources'][number], { input: unknown }>;
 type RetainItem = Extract<RetainSource['input'], { items: unknown }>['items'][number];
 type DegradedReason = NonNullable<Awaited<ReturnType<AknoClient['retain']>>['degraded']>[number];
+type HoldReason = NonNullable<Awaited<ReturnType<AknoClient['retain']>>['sources'][number]['reason_code']>;
 
 interface InFlightDigest {
   remainingSources?: RetainSource[];
@@ -1752,19 +1753,44 @@ function degradedNotes(reasons: readonly string[] = []): string[] {
     .map((kind) => DEGRADED_NOTES[kind]);
 }
 
+/**
+ * What each of Akno's hold reasons tells the owner of a scheduled report, where the raw reason may
+ * quote private evidence. Typed against the protocol like {@link DEGRADED_KIND}, so a new reason has
+ * to be worded here before the client can be upgraded. Only some holds are judgements about the
+ * item: a model call that failed mid-save (`apply_failed`) used to fall through to "its safety
+ * checks were not satisfied", which blamed the item for an outage.
+ */
+const HOLD_TEXT: Record<HoldReason, string> = {
+  discourse_uncertain:
+    'Independent verification did not produce a confirmed result; the receipt is preserved for review.',
+  time_unresolved: 'The date or event status could not be confirmed safely.',
+  source_unavailable: 'The original evidence or its exact quotation could not be confirmed.',
+  routing_uncertain: 'A suitable memory page could not be confirmed.',
+  context_too_large: 'The complete related evidence exceeds the safe context budget.',
+  apply_failed:
+    'Memory could not finish saving this item because a model or service call failed; the source is preserved for review.',
+  validation_failed: 'The extracted item was malformed, so it could not be checked or saved.',
+  placement_degraded: 'A suitable section for this item could not be chosen.',
+  not_durable: 'The item looked temporary or specific to one task, so it was not kept as a lasting memory.',
+  scope_mismatch: 'The item claimed more than its source supports, so it was not saved.',
+  noncanonical_without_context: 'The item needs context its source does not give, so it was not saved on its own.',
+  support_limit: 'The matching memory already has as many supporting sources as it can hold.',
+  no_writable_destination: 'No memory page that this item may be written to was found.',
+  conflict: 'The item conflicts with an existing memory; it is set aside until that is resolved.',
+  language_mismatch: 'The item is not in the knowledge base’s language.',
+  language_policy_required: 'The knowledge base’s language has to be confirmed before this item can be saved.',
+};
+
+/** A held entry with no hold reason carries Akno's outcome instead; these two have a meaning of their own. */
+const OUTCOME_HOLD_TEXT: Record<string, string> = {
+  revision_conflict:
+    'This version of the source was already saved with different content, so it was not applied again.',
+  not_found: 'The memory this source tried to correct or remove was not found.',
+};
+
 function readableHold(code: string): string {
-  switch (code) {
-    case 'discourse_uncertain':
-      return 'Independent verification did not produce a confirmed result; the receipt is preserved for review.';
-    case 'time_unresolved':
-      return 'The date or event status could not be confirmed safely.';
-    case 'source_unavailable':
-      return 'The original evidence or its exact quotation could not be confirmed.';
-    case 'routing_uncertain':
-      return 'A suitable memory page could not be confirmed.';
-    case 'context_too_large':
-      return 'The complete related evidence exceeds the safe context budget.';
-    default:
-      return 'Memory held this item because its safety checks were not satisfied.';
-  }
+  if (Object.hasOwn(HOLD_TEXT, code)) return HOLD_TEXT[code as HoldReason];
+  if (Object.hasOwn(OUTCOME_HOLD_TEXT, code)) return OUTCOME_HOLD_TEXT[code]!;
+  // An outcome with no reason, or a reason newer than this client: nothing to say beyond the hold.
+  return 'Memory held this item for review.';
 }

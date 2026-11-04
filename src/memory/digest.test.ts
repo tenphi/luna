@@ -330,6 +330,30 @@ describe('what the owner is told', () => {
     expect(note).not.toContain('Remembered');
   });
 
+  it('blames a failed model call, not the item, for a scheduled save that could not finish', () => {
+    const note = describeDigest({
+      wrote: [],
+      held: [{ code: 'apply_failed', reason: 'automatic retention could not complete: invented provider failure' }],
+      changeId: null,
+      counts: { saved: 0, alreadyKnown: 0, held: 1, evidenceOmitted: 0, batchesCompleted: 1, batchesTotal: 1 },
+      scheduled: { runId: 'run-1', status: 'degraded', outcome: 'held', degraded: ['derive_failed'] },
+    })!;
+    expect(note).toContain('a model or service call failed');
+    expect(note).not.toContain('safety checks');
+    // The raw reason can quote private evidence, so a scheduled note never carries it.
+    expect(note).not.toContain('invented provider failure');
+  });
+
+  it('words a hold reason it does not know without inventing a cause', () => {
+    const note = describeDigest({
+      wrote: [],
+      held: [{ code: 'invented_future_reason', reason: 'invented' }],
+      changeId: null,
+      scheduled: { runId: 'run-1', status: 'degraded', outcome: 'held', degraded: [] },
+    })!;
+    expect(note).toContain('Memory held this item for review.');
+  });
+
   it('says nothing when nothing happened', () => {
     // The common case by far: most messages contain nothing durable, and a 🧠 note on every turn
     // trains the owner to ignore it.
