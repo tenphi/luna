@@ -342,6 +342,30 @@ describe('what the owner is told', () => {
     expect(note).not.toContain('invented provider failure');
   });
 
+  it('says an item naming a stop word was skipped, not held', () => {
+    const note = describeDigest({
+      wrote: [{ slug: 'notes/zephyr-qx-100' }],
+      held: [
+        { code: 'stop_word', reason: 'the candidate mentions a configured stop word, or depends on one that does' },
+        { code: 'stop_word', reason: 'the candidate mentions a configured stop word, or depends on one that does' },
+        { code: 'routing_uncertain', reason: 'invented' },
+      ],
+      changeId: null,
+      counts: { saved: 1, alreadyKnown: 0, held: 3, evidenceOmitted: 0, batchesCompleted: 1, batchesTotal: 1 },
+      scheduled: { runId: 'run-1', status: 'ok', outcome: 'partial', degraded: [] },
+    })!;
+    expect(note).toBe('🧠 Memory: 1 saved to `notes/zephyr-qx-100` · 2 skipped (stop words) · 1 held (no clear page)');
+    expect(
+      describeDigest({
+        wrote: [],
+        held: [{ code: 'stop_word', reason: 'invented' }],
+        changeId: null,
+        counts: { saved: 0, alreadyKnown: 0, held: 1, evidenceOmitted: 0, batchesCompleted: 1, batchesTotal: 1 },
+        scheduled: { runId: 'run-1', status: 'ok', outcome: 'held', degraded: [] },
+      }),
+    ).toBe('🧠 Memory: nothing saved · 1 skipped (stop words)');
+  });
+
   it('keeps a long list of pages to one line', () => {
     const note = describeDigest({
       wrote: ['a', 'b', 'c', 'd', 'e'].map((name) => ({ slug: `notes/${name}` })),

@@ -1623,10 +1623,15 @@ export function describeDigest(outcome: DigestOutcome): string | null {
     );
   if (outcome.counts?.alreadyKnown) parts.push(`${outcome.counts.alreadyKnown} already known`);
 
-  const heldCount = outcome.held.length || (outcome.counts?.held ?? 0);
+  // An item that names one of the owner's stop words was skipped as asked. It is not a judgement
+  // about the item and there is nothing to review, so it must not read as held.
+  const skipped = outcome.held.filter((entry) => entry.code === STOP_WORD).length;
+  if (skipped) parts.push(`${skipped} skipped (stop words)`);
+  const held = outcome.held.filter((entry) => entry.code !== STOP_WORD);
+  const heldCount = outcome.held.length ? held.length : (outcome.counts?.held ?? 0);
   if (heldCount) {
     const labels = new Map<string, number>();
-    for (const entry of outcome.held) {
+    for (const entry of held) {
       const label = holdLabel(entry.code);
       labels.set(label, (labels.get(label) ?? 0) + 1);
     }
@@ -1780,6 +1785,9 @@ const HOLD_LABEL: Record<HoldReason, string> = {
   language_mismatch: 'wrong language',
   language_policy_required: 'language unset',
 };
+
+/** Akno's hold for `maintenance.retain.stop_words`; newer than the client this Luna is typed against. */
+const STOP_WORD = 'stop_word';
 
 /** A held entry with no hold reason carries Akno's outcome instead. */
 const OUTCOME_HOLD_LABEL: Record<string, string> = {
