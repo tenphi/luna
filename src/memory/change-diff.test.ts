@@ -79,10 +79,32 @@ describe('memory diff snippets', () => {
     expect(message).not.toContain('~~');
   });
 
-  it('acknowledges a created page without echoing its body', () => {
-    const messages = renderChangeDiff(change(null, '# Preferences\n\nNew notes.', 'created'));
-    expect(messages.map(plain)).toEqual(['🧠 Created notes/preferences.mdSay “undo that” to reverse this change.']);
-    expect(messages.flatMap(codes)).toEqual([]);
+  it('shows a created page whole when it fits in one message, without hidden metadata', () => {
+    const messages = renderChangeDiff(
+      change(null, '# Preferences\n\nNew notes. <!-- akno:item mem_invented v=2 -->\n', 'created'),
+    );
+    expect(messages).toHaveLength(1);
+    expect(plain(messages[0])).toContain('Created notes/preferences.md');
+    expect(codes(messages[0])).toEqual(['# Preferences\n\nNew notes.']);
+    expect(messages[0]).toContain('```markdown');
+    expect(messages[0]).toContain('undo that');
+  });
+
+  it('names a created page too long to show instead of splitting it', () => {
+    const body = Array.from({ length: 200 }, (_, index) => `Invented line ${index} about Blackwater Bay.`).join('\n');
+    const [message, ...rest] = renderChangeDiff(change(null, body, 'created'));
+    expect(rest).toEqual([]);
+    expect(plain(message)).toContain('Created notes/preferences.md · 200 lines, too long to show here');
+    expect(codes(message)).toEqual([]);
+  });
+
+  it('shows a mostly rewritten page whole instead of a run of snippets', () => {
+    const before = Array.from({ length: 30 }, (_, index) => `## Old ${index}\nOld detail ${index}.`).join('\n');
+    const after = '# Preferences\n\nPrefers afternoon meetings with Ada Marlow.\n';
+    const messages = renderChangeDiff(change(before, after));
+    expect(messages).toHaveLength(1);
+    expect(plain(messages[0])).toContain('Rewrote notes/preferences.md');
+    expect(codes(messages[0])).toEqual(['# Preferences\n\nPrefers afternoon meetings with Ada Marlow.']);
   });
 
   it('shows appends and deletions with an unchanged neighbor and original line locations', () => {
@@ -325,9 +347,25 @@ describe('memory diff snippets', () => {
       after: 'Keep this note.\n',
     });
     const messages = renderChangeDiff(input);
-    expect(messages).toHaveLength(2);
+    // The destination is the same page, not a new one.
+    expect(messages).toHaveLength(1);
     expect(messages.flatMap(codes)).toEqual([]);
     expect(plain(messages[0])).toContain('Moved notes/preferences.md to archive/preferences.md');
+  });
+
+  it('diffs a page that was edited while it moved, as Akno journals the move', () => {
+    // The old path carries the old text and no destination; the new path follows as created.
+    const messages = renderChangeDiff({
+      id: 'chg_fixture',
+      status: 'applied',
+      files: [
+        { relPath: 'notes/preferences.md', action: 'moved', before: '# Preferences\nOld time.\n', after: null },
+        { relPath: 'archive/preferences.md', action: 'created', before: null, after: '# Preferences\nNew time.\n' },
+      ],
+    });
+    expect(messages).toHaveLength(1);
+    expect(plain(messages[0])).toContain('Moved notes/preferences.md to archive/preferences.md');
+    expect(codes(messages[0])).toEqual(['  # Preferences\n- Old time.\n+ New time.']);
   });
 
   it('bounds long filenames and outline labels without truncating changed content', () => {

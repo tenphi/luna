@@ -6,6 +6,7 @@ import { isSilentContent } from './telegram-silent.js';
 interface ReceiptNode {
   type: string;
   value?: string;
+  lang?: string | null;
   children?: ReceiptNode[];
 }
 
@@ -36,7 +37,8 @@ function telegramMemoryReceiptHtml(markdown: string): string {
       case 'inlineCode':
         return `<code>${escapeHtml(node.value ?? '')}</code>`;
       case 'code':
-        return `<pre><code class="language-diff">${escapeHtml(node.value ?? '')}</code></pre>`;
+        // A diff snippet, or a small page shown whole as Markdown.
+        return `<pre><code class="language-${node.lang === 'markdown' ? 'markdown' : 'diff'}">${escapeHtml(node.value ?? '')}</code></pre>`;
       case 'html': {
         const details = /^<details><summary>(All changes(?: · \d+\/\d+)?)<\/summary>$/.exec(node.value ?? '');
         if (details) return `<blockquote expandable><b>${escapeHtml(details[1])}</b>`;

@@ -1593,102 +1593,104 @@ export function describeDigest(outcome: DigestOutcome): string | null {
   )
     return null;
 
-  const lines: string[] = [];
+  const scheduled = outcome.scheduled;
+  const saved = outcome.counts?.saved ?? 0;
+  if (
+    scheduled &&
+    (scheduled.outcome === 'noop' || scheduled.outcome === 'empty') &&
+    (scheduled.status === 'ok' || scheduled.status === 'empty') &&
+    !saved &&
+    !outcome.wrote.length &&
+    !outcome.held.length
+  )
+    return '🧠 Memory: nothing new from the scheduled report';
 
-  if (!outcome.scheduled && outcome.status === 'degraded') lines.push(...degradedNotes(outcome.degraded));
-  if (!outcome.scheduled && outcome.status === 'unavailable')
-    lines.push('Memory was unavailable; no new save was confirmed.');
+  // One line that answers "what did memory do with that?" at a glance. Each part restates a field
+  // of the receipt; the diffs that follow and the undo carry the detail.
+  const parts: string[] = [];
+  // With change notifications queued, the diffs name every page; listing them here would say it twice.
+  const pages = outcome.receiptNotifications ? '' : pageList(outcome.wrote.map(writtenPage));
+  if (saved) parts.push(`${saved} saved${pages ? ` to ${pages}` : ''}`);
+  else if (pages) parts.push(`remembered ${pages}`);
+  else if (outcome.wrote.length) parts.push(`${outcome.wrote.length} page(s) updated`);
+  else if (scheduled) parts.push('nothing saved');
 
-  if (outcome.scheduled) {
-    if (outcome.counts) {
-      const counts = outcome.counts;
-      lines.push(
-        `🧠 Digest memory: ${counts.saved} saved, ${counts.alreadyKnown} already known, ${counts.held} held for review.`,
-      );
-      if (counts.failedBatches)
-        lines.push(
-          `${counts.failedBatches} memory request(s) failed; their original evidence is preserved for recovery.`,
-        );
-      if (counts.evidenceOmitted)
-        lines.push(
-          `${counts.evidenceOmitted} original email source(s) could not be included; evidence coverage is incomplete.`,
-        );
-    }
-    const { status, outcome: result } = outcome.scheduled;
-    if (status === 'unavailable')
-      lines.push(
-        result === 'unavailable'
-          ? 'Scheduled report memory is unavailable; the save is queued for retry.'
-          : 'Scheduled report memory was unavailable; no new save was confirmed.',
-      );
-    else if (status === 'abandoned')
-      lines.push(
-        outcome.wrote.length
-          ? 'Some scheduled report memory requests remained unavailable; successful saves are listed below.'
-          : 'Scheduled report memory remained unavailable; its contents were not saved.',
-      );
-    else if (status === 'failed')
-      lines.push(
-        outcome.wrote.length
-          ? 'Some scheduled report memory requests failed; successful saves are listed below.'
-          : 'Scheduled report memory failed; its contents were not saved.',
-      );
-    else if (status === 'degraded')
-      lines.push(
-        outcome.wrote.length
-          ? 'Scheduled report memory was only partly available; review the saved pages below.'
-          : 'Scheduled report memory could not confirm any new save.',
-      );
-    else if ((result === 'noop' || result === 'empty') && !outcome.wrote.length && !outcome.counts?.saved)
-      lines.push('No new memories were saved from the scheduled report.');
-  }
-
-  if (outcome.wrote.length > 0 && !outcome.receiptNotifications) {
-    lines.push('🧠 Remembered:');
-    // Retain receipts do not echo the private claims. Page names are enough for the configured
-    // `pages` notification and cannot become a second, subtly wrong description of the write.
-    for (const entry of outcome.wrote)
-      lines.push(`• \`${entry.slug}\`${entry.timeline ? ` — timeline \`${entry.timeline}\`` : ''}`);
-  }
-
-  if (alsoWrote.length > 0) {
-    // A write the agent made during the turn. Real, undoable, and otherwise invisible here —
-    // a turn where it put an event on the timeline used to read like a turn that saved nothing.
-    lines.push(outcome.wrote.length > 0 ? '\nAlso saved during the turn:' : '🧠 Saved to memory:');
-    for (const slug of alsoWrote) lines.push(`• \`${slug}\``);
-  }
-
-  if (outcome.held.length > 0) {
-    lines.push(
-      outcome.wrote.length > 0
-        ? `\nAnd ${outcome.held.length} item(s) were not retained safely:`
-        : `🧠 ${outcome.held.length} item(s) were not retained safely:`,
+  // The agent's own write is real and undoable, and the digest did not decide it: "wrote", never
+  // "remembered". A turn where it put an event on the timeline used to read like one that saved nothing.
+  if (alsoWrote.length)
+    parts.push(
+      `${saved || outcome.wrote.length ? 'also wrote' : 'wrote'} ${pageList(alsoWrote.map((slug) => `\`${slug}\``))}`,
     );
-    const reasons = new Map<string, { code: string; reason: string; count: number }>();
-    for (const entry of outcome.held) {
-      const key = JSON.stringify([entry.code, outcome.scheduled ? '' : entry.reason]);
-      const previous = reasons.get(key);
-      reasons.set(key, { ...entry, count: (previous?.count ?? 0) + 1 });
-    }
-    for (const entry of reasons.values()) {
-      const readable = outcome.scheduled ? readableHold(entry.code) : entry.reason;
-      lines.push(
-        `• ${entry.count > 1 ? `${entry.count} items: ` : ''}${readable}${outcome.scheduled ? '' : ` (\`${entry.code}\`)`}`,
-      );
-    }
-  }
-  if (outcome.changeId && !outcome.receiptNotifications) {
-    lines.push(`\nSay "undo that" to reverse it.`);
-  }
+  if (outcome.counts?.alreadyKnown) parts.push(`${outcome.counts.alreadyKnown} already known`);
 
-  return lines.length ? lines.join('\n') : null;
+  const heldCount = outcome.held.length || (outcome.counts?.held ?? 0);
+  if (heldCount) {
+    const labels = new Map<string, number>();
+    for (const entry of outcome.held) {
+      const label = holdLabel(entry.code);
+      labels.set(label, (labels.get(label) ?? 0) + 1);
+    }
+    // Akno's raw reasons can quote private evidence and are written for its own logs; the labels are
+    // typed, so the note says the same thing for the same reason every time.
+    const detail =
+      labels.size === 1 ? [...labels.keys()][0] : [...labels].map(([label, n]) => `${n} ${label}`).join(', ');
+    parts.push(`${heldCount} held${detail ? ` (${detail})` : ''}`);
+  }
+  if (outcome.counts?.failedBatches)
+    parts.push(`${outcome.counts.failedBatches} request(s) failed, evidence kept for recovery`);
+  if (outcome.counts?.evidenceOmitted) parts.push(`${outcome.counts.evidenceOmitted} email source(s) missing`);
+
+  parts.push(...statusTags(outcome, saved > 0 || outcome.wrote.length > 0));
+  if (outcome.changeId && !outcome.receiptNotifications) parts.push('say “undo that” to revert');
+
+  return parts.length ? `🧠 Memory: ${parts.join(' · ')}` : null;
+}
+
+/** A few names are a review; a long list is noise. The diffs list every page when they are on. */
+function pageList(pages: string[], limit = 3): string {
+  if (pages.length <= limit) return pages.join(', ');
+  return `${pages.slice(0, limit).join(', ')} +${pages.length - limit} more`;
+}
+
+function writtenPage(entry: DigestOutcome['wrote'][number]): string {
+  return `\`${entry.slug}\`${entry.timeline ? ` (+ \`${entry.timeline}\`)` : ''}`;
+}
+
+/** What went wrong with the save itself, as opposed to the items memory chose to hold. */
+function statusTags(outcome: DigestOutcome, wroteSomething: boolean): string[] {
+  const scheduled = outcome.scheduled;
+  const heldApply = outcome.held.some((entry) => entry.code === 'apply_failed');
+  // A degraded receipt that gives no reason is explained by the holds or failed requests beside it.
+  const explained = outcome.held.length > 0 || (outcome.counts?.failedBatches ?? 0) > 0;
+  if (!scheduled) {
+    if (outcome.status === 'unavailable') return ['⚠️ memory unavailable, nothing confirmed'];
+    return outcome.status === 'degraded' ? degradedTags(outcome.degraded, heldApply, explained) : [];
+  }
+  switch (scheduled.status) {
+    case 'unavailable':
+      return [
+        scheduled.outcome === 'unavailable'
+          ? '⚠️ memory unavailable, queued for retry'
+          : '⚠️ memory unavailable, nothing confirmed',
+      ];
+    case 'abandoned':
+      return [
+        wroteSomething ? '⚠️ some requests stayed unavailable' : '⚠️ memory stayed unavailable, report not saved',
+      ];
+    case 'failed':
+      return [wroteSomething ? '⚠️ some requests failed' : '⚠️ save failed, report not saved'];
+    case 'degraded':
+      return degradedTags([...scheduled.degraded, ...(outcome.degraded ?? [])], heldApply, explained);
+    default:
+      return [];
+  }
 }
 
 type DegradedKind = 'availability' | 'apply' | 'correction' | 'other';
 
 /**
  * What each of Akno's degraded reasons means for the owner. Only a model or index that did not
- * answer is an availability problem: "partly available" for anything else sends the owner to a
+ * answer is an availability problem: "partly unavailable" for anything else sends the owner to a
  * health check that is, correctly, green. Typed against the protocol, so a new reason has to be
  * placed here before the client can be upgraded.
  */
@@ -1728,19 +1730,18 @@ const DEGRADED_KIND: Record<DegradedReason, DegradedKind> = {
   answer_truncated: 'other',
 };
 
-const DEGRADED_NOTES: Record<DegradedKind, string> = {
-  availability: 'Memory was only partly available; some items may not have been saved.',
-  // Memory answered and refused one write. The held reason below says which, so the note must not
-  // read as an outage.
-  apply: 'Memory could not apply a save, so it was held instead of written.',
+const DEGRADED_TAGS: Record<DegradedKind, string> = {
+  availability: '⚠️ memory partly unavailable',
+  // Memory answered and refused one write, so this must not read as an outage.
+  apply: 'a save could not be applied',
   // An unresolved correction is not an outage: everything safe was saved, and an earlier memory is
   // held instead.
-  correction:
-    'A possible correction to an earlier memory could not be confirmed; that memory is set aside until it is resolved.',
-  other: 'Memory reported a problem with this save; some items may not have been saved.',
+  correction: 'an earlier memory set aside until a correction is confirmed',
+  other: 'memory reported a problem',
 };
 
-function degradedNotes(reasons: readonly string[] = []): string[] {
+function degradedTags(reasons: readonly string[] = [], heldApply: boolean, explained: boolean): string[] {
+  if (!reasons.length && explained) return [];
   const kinds = new Set(
     reasons.map((reason) => (Object.hasOwn(DEGRADED_KIND, reason) ? DEGRADED_KIND[reason as DegradedReason] : 'other')),
   );
@@ -1748,49 +1749,48 @@ function degradedNotes(reasons: readonly string[] = []): string[] {
   // Next to a known reason it adds nothing the held items do not already say.
   if (kinds.size > 1) kinds.delete('other');
   if (!kinds.size) kinds.add('other');
+  // A held "save failed" already says a save could not be applied.
+  if (heldApply) kinds.delete('apply');
   return (['availability', 'apply', 'correction', 'other'] as const)
     .filter((kind) => kinds.has(kind))
-    .map((kind) => DEGRADED_NOTES[kind]);
+    .map((kind) => DEGRADED_TAGS[kind]);
 }
 
 /**
- * What each of Akno's hold reasons tells the owner of a scheduled report, where the raw reason may
- * quote private evidence. Typed against the protocol like {@link DEGRADED_KIND}, so a new reason has
- * to be worded here before the client can be upgraded. Only some holds are judgements about the
- * item: a model call that failed mid-save (`apply_failed`) used to fall through to "its safety
- * checks were not satisfied", which blamed the item for an outage.
+ * A few words for each of Akno's hold reasons. Typed against the protocol like {@link DEGRADED_KIND},
+ * so a new reason has to be labelled here before the client can be upgraded. Only some holds are
+ * judgements about the item: `apply_failed` is a save that broke, and once fell through to "its
+ * safety checks were not satisfied", which blamed the item for an outage.
  */
-const HOLD_TEXT: Record<HoldReason, string> = {
-  discourse_uncertain:
-    'Independent verification did not produce a confirmed result; the receipt is preserved for review.',
-  time_unresolved: 'The date or event status could not be confirmed safely.',
-  source_unavailable: 'The original evidence or its exact quotation could not be confirmed.',
-  routing_uncertain: 'A suitable memory page could not be confirmed.',
-  context_too_large: 'The complete related evidence exceeds the safe context budget.',
-  apply_failed:
-    'Memory could not finish saving this item because a model or service call failed; the source is preserved for review.',
-  validation_failed: 'The extracted item was malformed, so it could not be checked or saved.',
-  placement_degraded: 'A suitable section for this item could not be chosen.',
-  not_durable: 'The item looked temporary or specific to one task, so it was not kept as a lasting memory.',
-  scope_mismatch: 'The item claimed more than its source supports, so it was not saved.',
-  noncanonical_without_context: 'The item needs context its source does not give, so it was not saved on its own.',
-  support_limit: 'The matching memory already has as many supporting sources as it can hold.',
-  no_writable_destination: 'No memory page that this item may be written to was found.',
-  conflict: 'The item conflicts with an existing memory; it is set aside until that is resolved.',
-  language_mismatch: 'The item is not in the knowledge base’s language.',
-  language_policy_required: 'The knowledge base’s language has to be confirmed before this item can be saved.',
+const HOLD_LABEL: Record<HoldReason, string> = {
+  discourse_uncertain: 'unverified',
+  time_unresolved: 'unclear date',
+  source_unavailable: 'evidence missing',
+  routing_uncertain: 'no clear page',
+  context_too_large: 'too much context',
+  apply_failed: 'save failed',
+  validation_failed: 'malformed',
+  placement_degraded: 'no clear section',
+  not_durable: 'temporary',
+  scope_mismatch: 'beyond its source',
+  noncanonical_without_context: 'needs context',
+  support_limit: 'support limit reached',
+  no_writable_destination: 'no writable page',
+  conflict: 'conflicts with memory',
+  language_mismatch: 'wrong language',
+  language_policy_required: 'language unset',
 };
 
-/** A held entry with no hold reason carries Akno's outcome instead; these two have a meaning of their own. */
-const OUTCOME_HOLD_TEXT: Record<string, string> = {
-  revision_conflict:
-    'This version of the source was already saved with different content, so it was not applied again.',
-  not_found: 'The memory this source tried to correct or remove was not found.',
+/** A held entry with no hold reason carries Akno's outcome instead. */
+const OUTCOME_HOLD_LABEL: Record<string, string> = {
+  revision_conflict: 'already saved differently',
+  not_found: 'target not found',
+  held: 'no reason given',
 };
 
-function readableHold(code: string): string {
-  if (Object.hasOwn(HOLD_TEXT, code)) return HOLD_TEXT[code as HoldReason];
-  if (Object.hasOwn(OUTCOME_HOLD_TEXT, code)) return OUTCOME_HOLD_TEXT[code]!;
-  // An outcome with no reason, or a reason newer than this client: nothing to say beyond the hold.
-  return 'Memory held this item for review.';
+function holdLabel(code: string): string {
+  if (Object.hasOwn(HOLD_LABEL, code)) return HOLD_LABEL[code as HoldReason];
+  if (Object.hasOwn(OUTCOME_HOLD_LABEL, code)) return OUTCOME_HOLD_LABEL[code]!;
+  // A reason newer than this client: its own name says more than a guess would.
+  return code.replaceAll('_', ' ');
 }
