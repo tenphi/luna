@@ -15,7 +15,7 @@ import type { Response as ModelResponse, ResponseCreateParamsStreaming } from 'o
 
 import { loadConfig, type RunnerMemoryModels } from '../../../config.js';
 import type { ImageAttachment } from '../../../image-attachments.js';
-import { responsesInput } from '../responses.js';
+import { collectStreamedItem, responsesInput, withStreamedOutput } from '../responses.js';
 import type { ChatMessage, ContentPart } from '../types.js';
 import { buildUserContent } from '../vision.js';
 
@@ -306,9 +306,12 @@ async function memoryResponse(
   try {
     const stream = await memoryClient(resolved).responses.create(params, { signal: opts.signal });
     let response: ModelResponse | undefined;
+    const streamed: ModelResponse['output'] = [];
     for await (const event of stream) {
+      collectStreamedItem(streamed, event);
       if (event.type === 'response.completed' || event.type === 'response.incomplete') response = event.response;
     }
+    if (response) response = withStreamedOutput(response, streamed);
     const content = (response?.output ?? [])
       .flatMap((item) => (item.type === 'message' ? item.content : []))
       .map((part) => (part.type === 'output_text' ? part.text : ''))

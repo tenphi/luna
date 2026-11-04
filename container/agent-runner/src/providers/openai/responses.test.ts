@@ -221,6 +221,38 @@ test('finalization overrides tool reopening and provider-side storage; incomplet
   await expect(incomplete.next()).rejects.toThrow('did not complete');
 });
 
+test('items streamed only as output_item.done survive an empty completed output, as the ChatGPT backend sends them', async () => {
+  const items = [reasoning, message('Invented answer.', 'final_answer'), call('a')];
+  async function* subscription() {
+    for (const [output_index, item] of items.entries()) {
+      yield { type: 'response.output_item.added', output_index, item };
+      yield { type: 'response.output_item.done', output_index, item };
+    }
+    yield { type: 'response.completed', response: completed([]) };
+  }
+  const gen = responsesCompletion(
+    { create: async () => subscription() },
+    {
+      model: 'gpt-6-luna',
+      messages: [],
+      tools: [tool],
+      extraBody: {},
+      finalizing: false,
+      idleMs: 1000,
+      onTick: () => {},
+    },
+    { signal: new AbortController().signal, isAborted: () => false },
+  );
+  let step = await gen.next();
+  while (!step.done) step = await gen.next();
+  expect(step.value).toMatchObject({
+    text: 'Invented answer.',
+    toolCalls: [{ id: 'call_a', function: { name: 'TestTool', arguments: JSON.stringify({ value: 'a' }) } }],
+    responseItems: items,
+    reasoning: '[opaque reasoning state]',
+  });
+});
+
 test('a stream ending before completed fails instead of dispatching partial calls', async () => {
   async function* partial() {
     yield { type: 'response.output_item.added', output_index: 0, item: call('a') };
