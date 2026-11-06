@@ -30,7 +30,7 @@ import type { Transport } from './transport.js';
 import { formatTransportError } from './transport-errors.js';
 
 /** Commands that need the running host process (live container map, etc.). */
-const SOCKET_ONLY_COMMANDS = new Set(['status', 'health']);
+const SOCKET_ONLY_COMMANDS = new Set(['status', 'health', 'restart']);
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -88,6 +88,10 @@ async function main(): Promise<void> {
             (res.data as Record<string, unknown>).host_socket = 'unreachable';
             (res.data as Record<string, unknown>).note =
               'Host socket unreachable — live runtime/MCP supervisor state may be incomplete. Start the host for a full report.';
+          }
+          if (res.ok && command === 'restart' && res.data && typeof res.data === 'object') {
+            (res.data as Record<string, unknown>).note =
+              'Host socket unreachable — no running containers were restarted. Start the host with `luna service start`.';
           }
         } else {
           throw e;
