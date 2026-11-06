@@ -2,6 +2,7 @@ import {
   APIConnectionError,
   APIConnectionTimeoutError,
   APIError,
+  APIUserAbortError,
   AuthenticationError,
   RateLimitError,
 } from 'openai';
@@ -58,6 +59,62 @@ export class StreamIdleError extends Error {
 
 export function isStreamIdleError(err: unknown): err is StreamIdleError {
   return err instanceof StreamIdleError;
+}
+
+/**
+ * A Responses stream that reported `error` or `response.failed` in an event the SDK passed
+ * through. Keeps only the provider's error code: the message may echo request content.
+ */
+export class ResponsesStreamError extends Error {
+  readonly code?: string;
+
+  constructor(code?: string) {
+    super(code ? `Responses request failed (${code})` : 'Responses request failed');
+    this.name = 'ResponsesStreamError';
+    this.code = code;
+  }
+}
+
+/**
+ * Stream failures the same request would hit again. Codex, the reference client for the ChatGPT
+ * backend, retries every other stream failure, and so does Luna.
+ */
+const PERMANENT_STREAM_ERROR_CODES = new Set([
+  'context_length_exceeded',
+  'insufficient_quota',
+  'usage_not_included',
+  'invalid_prompt',
+]);
+const OVERLOADED_STREAM_ERROR_CODES = new Set(['server_is_overloaded', 'slow_down']);
+
+/**
+ * The failure a provider reported inside an HTTP 200 stream. The SDK raises an event that carries
+ * an `error` object as an `APIError` without a status, so {@link isServerError} never sees it; the
+ * ChatGPT subscription backend reports "Our servers are currently overloaded" this way. Connection
+ * and abort errors are status-less `APIError`s too, and are not stream failures.
+ */
+function streamFailure(err: unknown): { code?: string; type?: string; message: string } | null {
+  if (err instanceof ResponsesStreamError) return { code: err.code, message: '' };
+  if (!(err instanceof APIError) || err.status !== undefined) return null;
+  if (err instanceof APIConnectionError || err instanceof APIUserAbortError) return null;
+  return { code: err.code ?? undefined, type: err.type ?? undefined, message: err.message };
+}
+
+/** A stream failure worth another request with the same payload. */
+export function isTransientStreamError(err: unknown): boolean {
+  const failure = streamFailure(err);
+  if (!failure) return false;
+  if (failure.code && PERMANENT_STREAM_ERROR_CODES.has(failure.code)) return false;
+  return failure.type !== 'invalid_request_error';
+}
+
+function isOverloadedStreamError(err: unknown): boolean {
+  const failure = streamFailure(err);
+  if (!failure) return false;
+  return (
+    (failure.code !== undefined && OVERLOADED_STREAM_ERROR_CODES.has(failure.code)) ||
+    /overloaded/i.test(failure.message)
+  );
 }
 
 /** Override in tests via LUNA_CONNECTION_RETRY_DELAYS_SEC=0,0,0 */
@@ -217,6 +274,10 @@ export function formatConnectionRetryNotice(
     const status = (err as APIError).status;
     return `Model server at ${base} returned ${status}. Retrying in ${delaySec}s… (attempt ${attempt}/${maxAttempts})`;
   }
+  if (isTransientStreamError(err)) {
+    const what = isOverloadedStreamError(err) ? 'is overloaded' : 'failed mid-response';
+    return `Model server at ${base} ${what}. Retrying in ${delaySec}s… (attempt ${attempt}/${maxAttempts})`;
+  }
   const causeText = unwrapCauseMessage(err);
   const kind = classifyCause(causeText) ?? 'unreachable';
   return `Model server unreachable at ${base} (${kind}). Retrying in ${delaySec}s… (attempt ${attempt}/${maxAttempts})`;
@@ -262,7 +323,10 @@ export function formatProviderError(err: unknown, ctx: ProviderErrorContext, opt
     if (err instanceof RateLimitError) {
       return 'The model is busy right now. Please try again in a moment.';
     }
-    if (err instanceof APIError && err.status !== undefined && err.status >= 500) {
+    if (isOverloadedStreamError(err)) {
+      return 'The model is busy right now. Please try again in a moment.';
+    }
+    if ((err instanceof APIError && err.status !== undefined && err.status >= 500) || isTransientStreamError(err)) {
       return 'The model returned an error. Please try again in a moment.';
     }
     return 'Something went wrong while I was working on that. Please try again.';
@@ -300,6 +364,10 @@ export function formatProviderError(err: unknown, ctx: ProviderErrorContext, opt
 
   if (err instanceof APIError && err.status !== undefined && err.status >= 500) {
     return `Upstream error (${err.status}): ${causeText || err.message}`;
+  }
+
+  if (isTransientStreamError(err)) {
+    return `Upstream error mid-response: ${causeText}`;
   }
 
   return causeText || (err instanceof Error ? err.message : String(err));

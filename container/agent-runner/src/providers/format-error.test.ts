@@ -1,16 +1,36 @@
 import { describe, it, expect } from 'bun:test';
-import { APIConnectionError, APIConnectionTimeoutError, AuthenticationError, RateLimitError } from 'openai';
+import {
+  APIConnectionError,
+  APIConnectionTimeoutError,
+  APIError,
+  APIUserAbortError,
+  AuthenticationError,
+  RateLimitError,
+} from 'openai';
 
 import {
   formatConnectionRetryNotice,
   formatProviderError,
   formatRateLimitRetryNotice,
+  isTransientStreamError,
+  ResponsesStreamError,
   rateLimitRetryDelaySec,
   redactBaseUrl,
   unwrapCauseMessage,
 } from './format-error.js';
 
 const ctx = { baseURL: 'http://host.docker.internal:11434/v1', model: 'test' };
+/** What the SDK raises for a streamed event that carries an `error` object, as the ChatGPT backend sends an overload. */
+const streamOverload = new APIError(
+  undefined,
+  {
+    type: 'service_unavailable_error',
+    code: 'server_is_overloaded',
+    message: 'Our servers are currently overloaded. Please try again later.',
+  },
+  undefined,
+  undefined,
+);
 
 describe('formatProviderError', () => {
   it('detailed connection error mentions endpoint and Ollama hint', () => {
@@ -70,6 +90,46 @@ describe('formatProviderError', () => {
     expect(msg).toContain('busy');
     expect(msg).not.toContain('429');
   });
+
+  it('an overload reported inside the stream says the model is busy', () => {
+    expect(formatProviderError(streamOverload, ctx, { detailed: false })).toBe(
+      'The model is busy right now. Please try again in a moment.',
+    );
+    expect(formatProviderError(streamOverload, ctx, { detailed: true })).toBe(
+      'Upstream error mid-response: Our servers are currently overloaded. Please try again later.',
+    );
+  });
+
+  it('another transient stream failure says the model returned an error', () => {
+    const msg = formatProviderError(new ResponsesStreamError('server_error'), ctx, { detailed: false });
+    expect(msg).toBe('The model returned an error. Please try again in a moment.');
+  });
+});
+
+describe('isTransientStreamError', () => {
+  it('retries failures the provider reports inside the stream', () => {
+    expect(isTransientStreamError(streamOverload)).toBe(true);
+    expect(isTransientStreamError(new ResponsesStreamError('server_error'))).toBe(true);
+    expect(isTransientStreamError(new ResponsesStreamError())).toBe(true);
+  });
+
+  it('does not retry what the same request would hit again', () => {
+    expect(isTransientStreamError(new ResponsesStreamError('context_length_exceeded'))).toBe(false);
+    const invalid = new APIError(
+      undefined,
+      { type: 'invalid_request_error', message: 'Invented' },
+      undefined,
+      undefined,
+    );
+    expect(isTransientStreamError(invalid)).toBe(false);
+  });
+
+  it('leaves connection, abort and HTTP errors to their own checks', () => {
+    expect(isTransientStreamError(new APIConnectionError({ cause: new Error('ECONNREFUSED') }))).toBe(false);
+    expect(isTransientStreamError(new APIUserAbortError())).toBe(false);
+    expect(isTransientStreamError(new APIError(503, { message: 'unavailable' }, undefined, undefined))).toBe(false);
+    expect(isTransientStreamError(new Error('Responses request was incomplete'))).toBe(false);
+  });
 });
 
 describe('formatConnectionRetryNotice', () => {
@@ -80,6 +140,13 @@ describe('formatConnectionRetryNotice', () => {
     expect(msg).toContain('attempt 1/3');
     expect(msg).toContain('connection refused');
     expect(msg).toContain('host.docker.internal:11434');
+  });
+
+  it('detailed retry notice names an overload reported inside the stream', () => {
+    const msg = formatConnectionRetryNotice(streamOverload, 1, 3, 5, ctx, { detailed: true });
+    expect(msg).toBe(
+      'Model server at http://host.docker.internal:11434/v1 is overloaded. Retrying in 5s… (attempt 1/3)',
+    );
   });
 
   it('simplified retry notice is short', () => {

@@ -4,6 +4,7 @@ import type { OpenAITool } from './tools/builtin.js';
 import type { ProviderEvent } from '../types.js';
 import type { CompletionUsage } from './context.js';
 import { anySignal, withIdleWatchdog } from './stream-watchdog.js';
+import { ResponsesStreamError } from '../format-error.js';
 
 export interface ResponsesClient {
   create(params: Record<string, unknown>, options?: { signal?: AbortSignal }): Promise<unknown>;
@@ -73,6 +74,12 @@ export function withStreamedOutput<T extends { output?: unknown }>(response: T, 
   if (Array.isArray(response.output) && response.output.length) return response;
   const streamed = items.filter(Boolean);
   return streamed.length ? { ...response, output: streamed } : response;
+}
+
+/** The provider's code for a failed stream: an identifier that decides retries, never content. */
+function failureCode(event: Record<string, any>): string | undefined {
+  const code = event.type === 'error' ? (event.code ?? event.error?.code) : event.response?.error?.code;
+  return typeof code === 'string' && /^[\w.-]{1,64}$/.test(code) ? code : undefined;
 }
 
 function result(response: Record<string, any>): ResponsesTurn {
@@ -178,10 +185,9 @@ export async function* responsesCompletion(
     }
     collectStreamedItem(streamed, event);
     if (event.type === 'response.completed') completed = event.response;
-    if (event.type === 'error' || event.type === 'response.failed' || event.type === 'response.incomplete') {
-      // Provider diagnostics may echo request content. Keep this failure content-free.
-      throw new Error('Responses request failed or was incomplete');
-    }
+    // Provider diagnostics may echo request content. Keep these failures content-free.
+    if (event.type === 'error' || event.type === 'response.failed') throw new ResponsesStreamError(failureCode(event));
+    if (event.type === 'response.incomplete') throw new Error('Responses request was incomplete');
   }
   if (ctrl.isAborted()) throw new DOMException('Aborted', 'AbortError');
   if (!completed) throw new Error('Responses stream ended without a completed response');

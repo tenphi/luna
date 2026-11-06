@@ -31,6 +31,7 @@ import {
   isRateLimitError,
   isServerError,
   isStreamIdleError,
+  isTransientStreamError,
   logProviderError,
   rateLimitMaxRetries,
   rateLimitRetryDelaySec,
@@ -435,12 +436,13 @@ interface PrefetchedRecall {
 
 /**
  * Worth another request with the same payload: the endpoint was unreachable,
- * failed upstream, or accepted the request and then stopped talking. Rate
- * limits are transient too but carry a server-proposed delay, so they get
- * their own budget rather than sharing this one.
+ * failed upstream, accepted the request and then stopped talking, or reported
+ * a failure such as an overload inside its stream. Rate limits are transient
+ * too but carry a server-proposed delay, so they get their own budget rather
+ * than sharing this one.
  */
 function isTransientProviderError(err: unknown): boolean {
-  return isConnectionError(err) || isServerError(err) || isStreamIdleError(err);
+  return isConnectionError(err) || isServerError(err) || isStreamIdleError(err) || isTransientStreamError(err);
 }
 
 export class OpenAIProvider implements AgentProvider {

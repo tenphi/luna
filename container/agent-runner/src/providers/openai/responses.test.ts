@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { APIError } from 'openai';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -278,4 +279,109 @@ test('a stream ending before completed fails instead of dispatching partial call
   } catch (error) {
     expect(String(error)).toContain('without a completed response');
   }
+});
+
+const overloaded = () =>
+  new APIError(
+    undefined,
+    {
+      type: 'service_unavailable_error',
+      code: 'server_is_overloaded',
+      message: 'Our servers are currently overloaded. Please try again later.',
+    },
+    undefined,
+    undefined,
+  );
+
+class StreamFailureProvider extends OpenAIProvider {
+  requests = 0;
+  constructor(attempts: (() => AsyncGenerator<Record<string, unknown>>)[]) {
+    super({
+      model: 'gpt-6-luna',
+      effort: 'medium',
+      env: { OPENAI_API: 'responses', OPENAI_BASE_URL: 'https://api.openai.com/v1', OPENAI_API_KEY: 'fixture' },
+      memory: { autoRecall: false },
+    });
+    this.client = {
+      chat: {
+        completions: {
+          create: async () => {
+            throw new Error('Chat route must not be used');
+          },
+        },
+      },
+      responses: {
+        create: async () => attempts[Math.min(this.requests++, attempts.length - 1)]!(),
+      },
+    };
+  }
+  protected assembleSystemPrompt() {
+    return 'Invented system instructions';
+  }
+  protected async ensureTools() {
+    return [tool];
+  }
+  async run(): Promise<ProviderEvent[]> {
+    const query = this.query({ prompt: '<message>Send the invented report.</message>', cwd: temp });
+    query.end();
+    const events: ProviderEvent[] = [];
+    for await (const event of query.events) events.push(event);
+    return events;
+  }
+}
+
+async function withRetryDelays<T>(run: () => Promise<T>): Promise<T> {
+  const prior = process.env.LUNA_CONNECTION_RETRY_DELAYS_SEC;
+  process.env.LUNA_CONNECTION_RETRY_DELAYS_SEC = '0,0,0';
+  try {
+    return await run();
+  } finally {
+    if (prior === undefined) delete process.env.LUNA_CONNECTION_RETRY_DELAYS_SEC;
+    else process.env.LUNA_CONNECTION_RETRY_DELAYS_SEC = prior;
+  }
+}
+
+test('failures reported inside the stream are retried, as the ChatGPT backend reports an overload', async () => {
+  const provider = new StreamFailureProvider([
+    // The SDK raises a streamed event that carries an `error` object as an APIError without a status.
+    async function* () {
+      yield { type: 'response.created' };
+      throw overloaded();
+    },
+    async function* () {
+      yield { type: 'response.failed', response: { status: 'failed', error: { code: 'server_error' } } };
+    },
+    () => stream([message('Invented answer.', 'final_answer')]),
+  ]);
+  const events = await withRetryDelays(() => provider.run());
+  expect(provider.requests).toBe(3);
+  expect(events.filter((event) => event.type === 'progress')).toHaveLength(2);
+  expect(events.find((event) => event.type === 'result')).toMatchObject({ text: 'Invented answer.' });
+});
+
+test('a lasting overload ends the turn saying the model is busy', async () => {
+  const provider = new StreamFailureProvider([
+    async function* () {
+      throw overloaded();
+    },
+  ]);
+  const events = await withRetryDelays(() => provider.run());
+  expect(provider.requests).toBe(4);
+  expect(events.find((event) => event.type === 'result')).toMatchObject({
+    text: 'The model is busy right now. Please try again in a moment.',
+  });
+});
+
+test('a stream failure the same request would hit again is not retried', async () => {
+  const provider = new StreamFailureProvider([
+    async function* () {
+      yield { type: 'response.failed', response: { status: 'failed', error: { code: 'context_length_exceeded' } } };
+    },
+  ]);
+  const events = await withRetryDelays(() => provider.run());
+  expect(provider.requests).toBe(1);
+  expect(events.some((event) => event.type === 'progress')).toBe(false);
+  expect(events.find((event) => event.type === 'result')).toMatchObject({
+    text: 'Something went wrong while I was working on that. Please try again.',
+  });
 });
