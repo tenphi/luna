@@ -333,6 +333,24 @@ describe('memoryChat', () => {
       });
     });
 
+    it('reads an answer streamed as an item when the completed response leaves its output empty', async () => {
+      // The ChatGPT backend delivers each item only in `response.output_item.done`.
+      const item = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] };
+      const events = [
+        { type: 'response.output_item.done', output_index: 0, item },
+        { type: 'response.completed', response: { id: 'r1', status: 'completed', output: [] } },
+      ];
+      stub(
+        new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''), {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+      );
+
+      expect(await memoryChat([{ role: 'user', content: 'sum' }])).toBe('ok');
+      expect(bodies).toHaveLength(1);
+    });
+
     it('widens the allowance once when the answer was cut off', async () => {
       stub(sse('incomplete', ''), sse('completed', 'ok'));
 

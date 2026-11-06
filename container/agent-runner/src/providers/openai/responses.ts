@@ -4,6 +4,7 @@ import type { OpenAITool } from './tools/builtin.js';
 import type { ProviderEvent } from '../types.js';
 import type { CompletionUsage } from './context.js';
 import { anySignal, withIdleWatchdog } from './stream-watchdog.js';
+import { ResponsesStreamError } from '../format-error.js';
 
 export interface ResponsesClient {
   create(params: Record<string, unknown>, options?: { signal?: AbortSignal }): Promise<unknown>;
@@ -50,6 +51,35 @@ export function responsesInput(messages: ChatMessage[]): Record<string, unknown>
     }
   }
   return input;
+}
+
+/** Keep a streamed `response.output_item.done` item at its position in the output. */
+export function collectStreamedItem(
+  items: unknown[],
+  event: { type?: string; output_index?: number; item?: unknown },
+): void {
+  if (event.type !== 'response.output_item.done' || !event.item) return;
+  if (typeof event.output_index === 'number') items[event.output_index] = event.item;
+  else items.push(event.item);
+}
+
+/**
+ * The terminal response, with its output rebuilt from the streamed items when it arrived empty.
+ *
+ * The ChatGPT subscription backend ends a stream with `output: []` and delivers each item only in
+ * its own `response.output_item.done` event. The public API repeats the items in the terminal
+ * response, which stays authoritative whenever it carries any.
+ */
+export function withStreamedOutput<T extends { output?: unknown }>(response: T, items: unknown[]): T {
+  if (Array.isArray(response.output) && response.output.length) return response;
+  const streamed = items.filter(Boolean);
+  return streamed.length ? { ...response, output: streamed } : response;
+}
+
+/** The provider's code for a failed stream: an identifier that decides retries, never content. */
+function failureCode(event: Record<string, any>): string | undefined {
+  const code = event.type === 'error' ? (event.code ?? event.error?.code) : event.response?.error?.code;
+  return typeof code === 'string' && /^[\w.-]{1,64}$/.test(code) ? code : undefined;
 }
 
 function result(response: Record<string, any>): ResponsesTurn {
@@ -129,6 +159,7 @@ export async function* responsesCompletion(
   yield { type: 'effort', effort: String((params.reasoning as { effort?: string } | undefined)?.effort ?? 'default') };
   if (params.stream === false) return result(response as Record<string, unknown>);
   let completed: Record<string, any> | undefined;
+  const streamed: unknown[] = [];
   let text = '';
   let lastEmit = 0;
   // Responses output indices also count reasoning and commentary items. The host
@@ -152,13 +183,13 @@ export async function* responsesCompletion(
         lastEmit = Date.now();
       }
     }
+    collectStreamedItem(streamed, event);
     if (event.type === 'response.completed') completed = event.response;
-    if (event.type === 'error' || event.type === 'response.failed' || event.type === 'response.incomplete') {
-      // Provider diagnostics may echo request content. Keep this failure content-free.
-      throw new Error('Responses request failed or was incomplete');
-    }
+    // Provider diagnostics may echo request content. Keep these failures content-free.
+    if (event.type === 'error' || event.type === 'response.failed') throw new ResponsesStreamError(failureCode(event));
+    if (event.type === 'response.incomplete') throw new Error('Responses request was incomplete');
   }
   if (ctrl.isAborted()) throw new DOMException('Aborted', 'AbortError');
   if (!completed) throw new Error('Responses stream ended without a completed response');
-  return result(completed);
+  return result(withStreamedOutput(completed, streamed));
 }

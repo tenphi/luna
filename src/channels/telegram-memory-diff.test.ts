@@ -169,12 +169,12 @@ describe('Telegram memory receipts', () => {
     ).toHaveLength(count);
   });
 
-  it('acknowledges a new page without echoing its body', async () => {
+  it('shows a small new page as a native code block', async () => {
     const { calls, send } = harness();
     await send(null, '# Game list\nNew content.\n', 'created');
+    expect(calls).toHaveLength(1);
     expect(calls[0].body.text).toContain('Created <code>notes/game-list.md</code>');
-    expect(calls[0].body.text).not.toContain('New content');
-    expect(calls[0].body.text).not.toContain('<pre>');
+    expect(calls[0].body.text).toContain('<pre><code class="language-markdown"># Game list\nNew content.</code></pre>');
   });
 
   it('escapes special filename characters inside native code instead of a link', async () => {

@@ -247,7 +247,7 @@ function location(rows: DiffRow[]): string {
 }
 
 /** A source code fence may occur in the context, so choose a safe outer fence. */
-function codeBlock(text: string): string {
+function codeBlock(text: string, language = 'diff'): string {
   const runLength = (char: string) => {
     let longest = 2;
     for (const run of text.matchAll(new RegExp(`${char}+`, 'g'))) longest = Math.max(longest, run[0].length);
@@ -256,7 +256,7 @@ function codeBlock(text: string): string {
   const ticks = runLength('`');
   const tildes = runLength('~');
   const fence = (ticks <= tildes ? '`' : '~').repeat(Math.min(ticks, tildes) + 1);
-  return `${fence}diff\n${text}\n${fence}`;
+  return `${fence}${language}\n${text}\n${fence}`;
 }
 
 function snippet(rows: DiffRow[], showEndings: boolean): string {
@@ -305,61 +305,121 @@ function splitRow(row: DiffRow, fits: (rows: DiffRow[]) => boolean): DiffRow[] {
   return result.map((part, index) => ({ ...part, fragment: { index: index + 1, total: result.length } }));
 }
 
-export function renderChangeDiff(change: ChangeDetails): string[] {
-  const messages: string[] = [];
-  for (const file of change.files) {
-    if (!file.relPath.endsWith('.md') || file.relPath.startsWith('conversations/')) continue;
-    const name = formatMemoryPath(file.relPath);
-    if (file.action === 'created') {
-      messages.push(`🧠 Created ${name}${UNDO_NOTICE}`);
-      continue;
-    }
-    if (file.action === 'moved') {
-      messages.push(`🧠 Moved ${name}${file.movedTo ? ` to ${formatMemoryPath(file.movedTo)}` : ''}${UNDO_NOTICE}`);
-      continue;
-    }
-    if (file.before === file.after) continue;
-    const before = file.before ?? '';
-    const after = file.after ?? '';
-    const title = `🧠 ${file.action === 'deleted' ? 'Deleted' : 'Updated'} ${name}`;
-    const rows = diffRows(before, after);
-    const changed = rows.filter((row) => row.marker !== ' ');
-    const showEndings = changed.some((row) => row.ending === '\r\n') && changed.some((row) => row.ending === '\n');
-    const bodies: string[] = [];
-    for (const hunk of hunks(rows)) {
-      const fits = (rows: DiffRow[]) => messageBody(title, hunk.section, rows, showEndings).length <= CONTENT_LIMIT;
-      let pending: DiffRow[] = [];
-      const flush = () => {
-        if (pending.some((row) => row.marker !== ' '))
-          bodies.push(messageBody(title, hunk.section, pending, showEndings));
-        pending = [];
-      };
-      for (const row of hunk.rows) {
-        if (row.marker === ' ') {
-          // Dropping a context line from the middle would make separated
-          // changes appear adjacent. Start a new snippet at that boundary.
-          if (!fits([...pending, row])) flush();
-          if (fits([row])) pending.push(row);
-          continue;
-        }
-        for (const part of splitRow(row, fits)) {
-          if (part.fragment) {
-            flush();
-            bodies.push(messageBody(title, hunk.section, [part], showEndings));
-          } else {
-            if (!fits([...pending, part])) flush();
-            pending.push(part);
-          }
+/** Changed lines below which a diff always beats showing the page. */
+const REWRITE_MIN_LINES = 12;
+
+/** The whole page as a reader sees it, in one message, or null when it would not fit. */
+function pageMessage(title: string, text: string): string | null {
+  const visible = displayLines(text)
+    .map((line) => line.text)
+    .join('\n')
+    .trim();
+  if (!visible) return `${title}${UNDO_NOTICE}`;
+  const message = `${title}\n\n${codeBlock(visible, 'markdown')}${UNDO_NOTICE}`;
+  return message.length <= CONTENT_LIMIT ? message : null;
+}
+
+function createdMessage(name: string, after: string): string {
+  const title = `🧠 Created ${name}`;
+  return (
+    pageMessage(title, after) ?? `${title} · ${displayLines(after).length} lines, too long to show here${UNDO_NOTICE}`
+  );
+}
+
+/**
+ * The change between two snapshots as diff snippets. A page that was mostly rewritten is shown
+ * whole instead when it fits, because a run of `-` and `+` messages hides the result it produced.
+ */
+function diffMessages(title: string, before: string, after: string, rewriteTitle: string | null): string[] {
+  const rows = diffRows(before, after);
+  const changed = rows.filter((row) => row.marker !== ' ');
+  const showEndings = changed.some((row) => row.ending === '\r\n') && changed.some((row) => row.ending === '\n');
+  const bodies: string[] = [];
+  for (const hunk of hunks(rows)) {
+    const fits = (rows: DiffRow[]) => messageBody(title, hunk.section, rows, showEndings).length <= CONTENT_LIMIT;
+    let pending: DiffRow[] = [];
+    const flush = () => {
+      if (pending.some((row) => row.marker !== ' '))
+        bodies.push(messageBody(title, hunk.section, pending, showEndings));
+      pending = [];
+    };
+    for (const row of hunk.rows) {
+      if (row.marker === ' ') {
+        // Dropping a context line from the middle would make separated
+        // changes appear adjacent. Start a new snippet at that boundary.
+        if (!fits([...pending, row])) flush();
+        if (fits([row])) pending.push(row);
+        continue;
+      }
+      for (const part of splitRow(row, fits)) {
+        if (part.fragment) {
+          flush();
+          bodies.push(messageBody(title, hunk.section, [part], showEndings));
+        } else {
+          if (!fits([...pending, part])) flush();
+          pending.push(part);
         }
       }
-      flush();
     }
-    if (!bodies.length && file.action === 'deleted') bodies.push(`${title}${UNDO_NOTICE}`);
-    messages.push(
-      ...bodies.map((body, index) =>
-        bodies.length > 1 ? body.replace(title, `${title} · ${index + 1}/${bodies.length}`) : body,
-      ),
-    );
+    flush();
   }
+  // Mostly new text, and the page itself says it in less than the snippets would. A short edit is
+  // always a diff: on a one-line page it is a total rewrite, and old beside new is the point.
+  const rewritten = changed.length >= REWRITE_MIN_LINES && changed.length > 2 * (rows.length - changed.length);
+  if (rewriteTitle && rewritten) {
+    const page = pageMessage(rewriteTitle, after);
+    if (page && page.length < bodies.join('').length) return [page];
+  }
+  return bodies.map((body, index) =>
+    bodies.length > 1 ? body.replace(title, `${title} · ${index + 1}/${bodies.length}`) : body,
+  );
+}
+
+export function renderChangeDiff(change: ChangeDetails): string[] {
+  const files = change.files.filter(
+    (file) => file.relPath.endsWith('.md') && !file.relPath.startsWith('conversations/'),
+  );
+  // Akno journals a moved page as its old path, `moved` with the old text, and its new path,
+  // `created` with the new text. Shown apart they read as an unrelated new page, and an edit made
+  // while moving showed no diff at all, so the two are paired and diffed here.
+  const moveTargets = new Map<number, number>();
+  const paired = new Set<number>();
+  files.forEach((file, index) => {
+    if (file.action !== 'moved' || file.before === null) return;
+    const target = files.findIndex(
+      (other, at) =>
+        other.action === 'created' && !paired.has(at) && (file.movedTo ? other.relPath === file.movedTo : at > index),
+    );
+    if (target < 0) return;
+    moveTargets.set(index, target);
+    paired.add(target);
+  });
+
+  const messages: string[] = [];
+  files.forEach((file, index) => {
+    if (paired.has(index)) return;
+    const name = formatMemoryPath(file.relPath);
+    if (file.action === 'created') {
+      messages.push(createdMessage(name, file.after ?? ''));
+      return;
+    }
+    if (file.action === 'moved') {
+      const target = moveTargets.get(index);
+      if (target === undefined) {
+        messages.push(`🧠 Moved ${name}${file.movedTo ? ` to ${formatMemoryPath(file.movedTo)}` : ''}${UNDO_NOTICE}`);
+        return;
+      }
+      const title = `🧠 Moved ${name} to ${formatMemoryPath(files[target].relPath)}`;
+      const diff = diffMessages(title, file.before ?? '', files[target].after ?? '', `${title}, rewritten`);
+      messages.push(...(diff.length ? diff : [`${title}${UNDO_NOTICE}`]));
+      return;
+    }
+    if (file.before === file.after) return;
+    const deleted = file.action === 'deleted';
+    const title = `🧠 ${deleted ? 'Deleted' : 'Updated'} ${name}`;
+    const diff = diffMessages(title, file.before ?? '', file.after ?? '', deleted ? null : `🧠 Rewrote ${name}`);
+    if (!diff.length && deleted) diff.push(`${title}${UNDO_NOTICE}`);
+    messages.push(...diff);
+  });
   return messages;
 }

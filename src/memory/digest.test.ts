@@ -289,7 +289,7 @@ describe('what the owner is told', () => {
         changeId: null,
         scheduled: { runId: 'run-1', status: 'empty', outcome: 'noop', degraded: [] },
       }),
-    ).toBe('No new memories were saved from the scheduled report.');
+    ).toBe('🧠 Memory: nothing new from the scheduled report');
     expect(
       describeDigest({
         wrote: [],
@@ -325,9 +325,64 @@ describe('what the owner is told', () => {
       ],
       changeId: null,
     })!;
-    expect(note).toContain('not retained safely');
-    expect(note).toContain('routing_uncertain');
-    expect(note).not.toContain('Remembered');
+    expect(note).toBe('🧠 Memory: 1 held (no clear page)');
+    expect(note).not.toContain('remembered');
+  });
+
+  it('blames a failed model call, not the item, for a scheduled save that could not finish', () => {
+    const note = describeDigest({
+      wrote: [],
+      held: [{ code: 'apply_failed', reason: 'automatic retention could not complete: invented provider failure' }],
+      changeId: null,
+      counts: { saved: 0, alreadyKnown: 0, held: 1, evidenceOmitted: 0, batchesCompleted: 1, batchesTotal: 1 },
+      scheduled: { runId: 'run-1', status: 'degraded', outcome: 'held', degraded: ['derive_failed'] },
+    })!;
+    expect(note).toBe('🧠 Memory: nothing saved · 1 held (save failed) · ⚠️ memory partly unavailable');
+    // The raw reason can quote private evidence, so a scheduled note never carries it.
+    expect(note).not.toContain('invented provider failure');
+  });
+
+  it('says an item naming a stop word was skipped, not held', () => {
+    const note = describeDigest({
+      wrote: [{ slug: 'notes/zephyr-qx-100' }],
+      held: [
+        { code: 'stop_word', reason: 'the candidate mentions a configured stop word, or depends on one that does' },
+        { code: 'stop_word', reason: 'the candidate mentions a configured stop word, or depends on one that does' },
+        { code: 'routing_uncertain', reason: 'invented' },
+      ],
+      changeId: null,
+      counts: { saved: 1, alreadyKnown: 0, held: 3, evidenceOmitted: 0, batchesCompleted: 1, batchesTotal: 1 },
+      scheduled: { runId: 'run-1', status: 'ok', outcome: 'partial', degraded: [] },
+    })!;
+    expect(note).toBe('🧠 Memory: 1 saved to `notes/zephyr-qx-100` · 2 skipped (stop words) · 1 held (no clear page)');
+    expect(
+      describeDigest({
+        wrote: [],
+        held: [{ code: 'stop_word', reason: 'invented' }],
+        changeId: null,
+        counts: { saved: 0, alreadyKnown: 0, held: 1, evidenceOmitted: 0, batchesCompleted: 1, batchesTotal: 1 },
+        scheduled: { runId: 'run-1', status: 'ok', outcome: 'held', degraded: [] },
+      }),
+    ).toBe('🧠 Memory: nothing saved · 1 skipped (stop words)');
+  });
+
+  it('keeps a long list of pages to one line', () => {
+    const note = describeDigest({
+      wrote: ['a', 'b', 'c', 'd', 'e'].map((name) => ({ slug: `notes/${name}` })),
+      held: [],
+      changeId: 'chg_1111',
+    })!;
+    expect(note).toBe('🧠 Memory: remembered `notes/a`, `notes/b`, `notes/c` +2 more · say “undo that” to revert');
+  });
+
+  it('words a hold reason it does not know without inventing a cause', () => {
+    const note = describeDigest({
+      wrote: [],
+      held: [{ code: 'invented_future_reason', reason: 'invented' }],
+      changeId: null,
+      scheduled: { runId: 'run-1', status: 'degraded', outcome: 'held', degraded: [] },
+    })!;
+    expect(note).toBe('🧠 Memory: nothing saved · 1 held (invented future reason)');
   });
 
   it('says nothing when nothing happened', () => {
@@ -409,7 +464,7 @@ describe('what the owner is told', () => {
           reason: 'candidate text is not one bounded self-contained statement',
         },
       ]);
-      expect(describeDigest(outcome!)!).toContain('1 item(s) were not retained safely');
+      expect(describeDigest(outcome!)!).toContain(' 1 held (');
     } finally {
       db.close();
     }
@@ -442,10 +497,9 @@ describe('what the owner is told', () => {
       const outcome = await runPendingDigest(db, { agentGroupId: 'ag', sessionId: 'held-five' });
       expect(outcome?.held).toHaveLength(5);
       const notice = describeDigest(outcome!)!;
-      expect(notice).toContain('5 item(s) were not retained safely');
-      expect(notice.match(/• /g)).toHaveLength(3);
-      expect(notice).toContain('2 items: Fixture discourse_uncertain');
-      expect(notice).toContain('2 items: Fixture routing_uncertain');
+      expect(notice).toBe('🧠 Memory: 5 held (1 unclear date, 2 unverified, 2 no clear page)');
+      // Akno's raw reasons are for its logs; the note uses typed labels.
+      expect(notice).not.toContain('Fixture');
     } finally {
       db.close();
     }
@@ -665,9 +719,9 @@ describe('scheduled report retention', () => {
       expect(outcome?.wrote).toEqual([{ slug: 'notes/first' }]);
       expect(
         describeDigest({ ...outcome!, scheduled: { ...outcome!.scheduled!, status: 'ok', outcome: 'noop' } }),
-      ).not.toContain('No new memories');
+      ).not.toContain('nothing new');
       expect(describeDigest({ ...outcome!, scheduled: { ...outcome!.scheduled!, status: 'failed' } })).not.toContain(
-        'its contents were not saved',
+        'report not saved',
       );
       expect(outcome?.scheduled?.status).toBe('degraded');
       expect(JSON.parse(getSessionState(db, 'memory:retain-review')!)).toHaveLength(1);
@@ -717,7 +771,7 @@ describe('scheduled report retention', () => {
       const outcome = await runPendingDigest(db, options);
       expect(outcome?.counts).toMatchObject({ saved: 1, failedBatches: 1, batchesCompleted: 2 });
       expect(outcome?.scheduled?.status).toBe('degraded');
-      expect(describeDigest(outcome!)).toContain('original evidence is preserved for recovery');
+      expect(describeDigest(outcome!)).toContain('1 request(s) failed, evidence kept for recovery');
     } finally {
       db.close();
     }
@@ -1100,9 +1154,9 @@ describe('timeline membership in ordinary and scheduled receipts', () => {
         ]);
         expect(outcome?.held).toEqual([{ code: 'routing_uncertain', reason: 'No safe placement.' }]);
         const note = describeDigest(outcome!)!;
-        expect(note).toContain('only partly available');
-        expect(note).toContain('timeline `work/timeline`');
-        expect(note).toContain('timeline `case/timeline`');
+        expect(note).toContain('memory partly unavailable');
+        expect(note).toContain('`work/prototype` (+ `work/timeline`)');
+        expect(note).toContain('`case/deadline` (+ `case/timeline`)');
         expect(note).not.toContain('work/older');
         expect(note).not.toContain('unwritable/item');
         expect(note).not.toContain(text);
@@ -1123,8 +1177,8 @@ describe('timeline membership in ordinary and scheduled receipts', () => {
       status: 'degraded',
       degraded: ['deciding_relation_unavailable'],
     })!;
-    expect(correction).toContain('possible correction to an earlier memory');
-    expect(correction).not.toContain('only partly available');
+    expect(correction).toContain('earlier memory set aside');
+    expect(correction).not.toContain('unavailable');
     const mixed = describeDigest({
       wrote: [],
       held,
@@ -1132,8 +1186,8 @@ describe('timeline membership in ordinary and scheduled receipts', () => {
       status: 'degraded',
       degraded: ['deciding_relation_unavailable', 'retain_verification_failed'],
     })!;
-    expect(mixed).toContain('only partly available');
-    expect(mixed).toContain('possible correction to an earlier memory');
+    expect(mixed).toContain('partly unavailable');
+    expect(mixed).toContain('earlier memory set aside');
   });
 
   it('describes a refused write as a held save, not unavailable memory', () => {
@@ -1145,9 +1199,8 @@ describe('timeline membership in ordinary and scheduled receipts', () => {
       status: 'degraded',
       degraded: ['retain_apply_failed'],
     })!;
-    expect(note).toContain('could not apply a save');
-    expect(note).not.toContain('available');
-    expect(note).toContain('no page at people/ada-marlow (`apply_failed`)');
+    // The held label already says the save failed; it is not an outage.
+    expect(note).toBe('🧠 Memory: 1 held (save failed)');
     const outage = describeDigest({
       wrote: [{ slug: 'people/bo-winters' }],
       held,
@@ -1155,17 +1208,21 @@ describe('timeline membership in ordinary and scheduled receipts', () => {
       status: 'degraded',
       degraded: ['retain_apply_failed', 'derive_failed'],
     })!;
-    expect(outage).toContain('only partly available');
-    expect(outage).toContain('could not apply a save');
+    expect(outage).toContain('partly unavailable');
+    expect(outage).toContain('1 held (save failed)');
   });
 
   it('does not claim an outage for a degraded receipt it cannot explain', () => {
     const held = [{ code: 'not_durable', reason: 'Transient task detail.' }];
-    for (const degraded of [undefined, ['a_reason_from_a_newer_akno'], ['source_conflict']]) {
+    for (const degraded of [['a_reason_from_a_newer_akno'], ['source_conflict']]) {
       const note = describeDigest({ wrote: [], held, changeId: null, status: 'degraded', degraded })!;
-      expect(note).toContain('Memory reported a problem with this save');
-      expect(note).not.toContain('available');
+      expect(note).toContain('memory reported a problem');
+      expect(note).not.toContain('unavailable');
     }
+    // With no reason at all, the held item is the explanation.
+    expect(describeDigest({ wrote: [], held, changeId: null, status: 'degraded' })).toBe(
+      '🧠 Memory: 1 held (temporary)',
+    );
     const known = describeDigest({
       wrote: [],
       held,
@@ -1173,7 +1230,7 @@ describe('timeline membership in ordinary and scheduled receipts', () => {
       status: 'degraded',
       degraded: ['a_reason_from_a_newer_akno', 'retain_apply_failed'],
     })!;
-    expect(known).toContain('could not apply a save');
+    expect(known).toContain('a save could not be applied');
     expect(known).not.toContain('reported a problem');
   });
 
@@ -1192,9 +1249,9 @@ describe('timeline membership in ordinary and scheduled receipts', () => {
       changeId: null,
       scheduled: { runId: 'run-unavailable', status: 'unavailable', outcome: 'held', degraded: [] },
     });
-    expect(note).toContain('no new save was confirmed');
+    expect(note).toContain('nothing confirmed');
     expect(note).not.toContain('queued for retry');
-    expect(note).not.toContain('Remembered');
+    expect(note).not.toContain('remembered');
   });
 });
 
@@ -1322,10 +1379,9 @@ describe('telling the owner what the agent itself saved', () => {
       changeId: null,
       byAgentPages: ['timeline'],
     })!;
-    expect(note).toContain('Saved to memory');
-    expect(note).toContain('timeline');
-    // Not "Remembered": that word belongs to the digest deciding, and the agent decided here.
-    expect(note).not.toContain('Remembered');
+    expect(note).toBe('🧠 Memory: wrote `timeline`');
+    // Not "remembered": that word belongs to the digest deciding, and the agent decided here.
+    expect(note).not.toContain('remembered');
   });
 
   it('reports both when the agent wrote and the digest kept something else', () => {
@@ -1337,10 +1393,8 @@ describe('telling the owner what the agent itself saved', () => {
       changeId: 'chg_1',
       byAgentPages: ['timeline'],
     })!;
-    expect(note).toContain('Remembered');
-    expect(note).toContain('research/tenancy-law');
-    expect(note).toContain('Also saved during the turn');
-    expect(note).toContain('timeline');
+    expect(note).toContain('remembered `research/tenancy-law`');
+    expect(note).toContain('also wrote `timeline`');
   });
 
   it('does not list a page twice when both wrote to it', () => {
@@ -1351,7 +1405,7 @@ describe('telling the owner what the agent itself saved', () => {
       byAgentPages: ['household/lease'],
     })!;
     expect(note.match(/household\/lease/g)).toHaveLength(1);
-    expect(note).not.toContain('Also saved');
+    expect(note).not.toContain('also wrote');
   });
 
   it('says "Remembered" when only the digest wrote', () => {
@@ -1360,8 +1414,8 @@ describe('telling the owner what the agent itself saved', () => {
       held: [],
       changeId: 'chg_1',
     })!;
-    expect(note).toContain('Remembered');
-    expect(note).not.toContain('Saved to memory');
+    expect(note).toContain('remembered `household/lease`');
+    expect(note).not.toContain('wrote');
   });
 });
 
@@ -1603,8 +1657,8 @@ describe('what the digest is shown', () => {
       expect(outcome?.byAgentPages).toEqual([]);
       expect(retainMission()).not.toContain(mirrorSlug);
       const note = describeDigest(outcome!)!;
-      expect(note).toContain('1 item(s) were not retained safely');
-      expect(note).not.toContain('Saved to memory');
+      expect(note).toContain('1 held');
+      expect(note).not.toContain('wrote');
       expect(note).not.toContain(mirrorSlug);
     } finally {
       db.close();

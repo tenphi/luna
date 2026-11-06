@@ -344,7 +344,7 @@ describe('the memory digest note', () => {
       channel_type: routing.channel_type,
       platform_id: routing.platform_id,
       thread_id: routing.thread_id,
-      content: '🧠 Remembered: • the rent is 1200 EUR → `home/lease`',
+      content: '🧠 Memory: remembered `home/lease`',
     });
 
     const row = db
