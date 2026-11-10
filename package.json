@@ -1,6 +1,6 @@
 {
   "name": "@tenphi/luna",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "A macOS personal assistant with Apple services, isolated tools, natural conversations, and optional Akno knowledge.",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
