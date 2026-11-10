@@ -872,7 +872,6 @@ export class OpenAIProvider implements AgentProvider {
         return { text: res.value.text, toolCalls: res.value.toolCalls };
       } catch (err) {
         if (signal.aborted || isAbortError(err)) return { text: '', toolCalls: [] };
-        logProviderError(err);
 
         let delaySec: number;
         if (isTransientProviderError(err) && connAttempt < delays.length) {
@@ -882,8 +881,10 @@ export class OpenAIProvider implements AgentProvider {
           delaySec = rateLimitRetryDelaySec(err);
           rateLimitAttempt += 1;
         } else {
+          logProviderError(err);
           throw err;
         }
+        logProviderError(err, { retrying: true });
         log(`Sub-agent completion retrying in ${delaySec}s`);
         await sleepMsWithHeartbeat(delaySec * 1000, touchHeartbeat);
       }
@@ -1479,7 +1480,7 @@ export class OpenAIProvider implements AgentProvider {
           if (ctrl.isAborted() || isAbortError(err)) return;
           lastConnErr = err;
           if (isTransientProviderError(err) && connAttempt < maxConnAttempts) {
-            logProviderError(err);
+            logProviderError(err, { retrying: true });
             const delaySec = delays[connAttempt]!;
             connAttempt += 1;
             yield {
@@ -1492,7 +1493,7 @@ export class OpenAIProvider implements AgentProvider {
             continue;
           }
           if (isRateLimitError(err) && rateLimitAttempt < maxRateLimitRetries) {
-            logProviderError(err);
+            logProviderError(err, { retrying: true });
             const delaySec = rateLimitRetryDelaySec(err);
             rateLimitAttempt += 1;
             yield {

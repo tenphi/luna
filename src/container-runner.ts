@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createInterface } from 'node:readline';
 import { CONTAINER_IMAGE, CONTAINER_IMAGE_BASE, DATA_DIR } from './config.js';
 import {
   loadContainerConfig,
@@ -29,6 +30,28 @@ const activeContainers = new Map<string, Running>();
 const starting = new Map<string, Promise<boolean>>();
 export const getActiveContainerCount = (): number => activeContainers.size;
 export const isContainerRunning = (session: string): boolean => activeContainers.has(session);
+
+/**
+ * Agent stderr lines that mean a turn or the agent itself failed. They come
+ * from the agent runner: `logProviderError` (format-error.ts), the runner and
+ * MCP tool server entry points, and the MCP bridge. A retried model error is
+ * logged as `retrying after error:` and stays at debug level.
+ */
+const AGENT_FAILURE_PREFIXES = [
+  '[openai-provider] error: ',
+  '[agent-runner] Startup failed',
+  '[mcp-tools] Server startup failed',
+  '[openai-mcp-bridge] Failed to connect MCP server',
+];
+
+/**
+ * Agent failures go to the error log, where `luna status` and `luna health`
+ * read them. Other agent output stays at debug level.
+ */
+export function logAgentStderrLine(line: string, session: string): void {
+  const failed = AGENT_FAILURE_PREFIXES.some((prefix) => line.startsWith(prefix));
+  log[failed ? 'error' : 'debug'](line, { session });
+}
 
 async function launch(session: Session): Promise<void> {
   const group = getAgentGroup(session.agent_group_id);
@@ -61,9 +84,13 @@ async function launch(session: Session): Promise<void> {
   activeContainers.set(session.id, record);
   markContainerRunning(session.id);
   process_.stdout?.resume();
-  process_.stderr?.on('data', (chunk: Buffer) => {
-    for (const line of chunk.toString().split('\n').filter(Boolean)) log.debug(line, { session: session.id });
-  });
+  // readline joins lines that arrive split across stderr chunks, so a failure
+  // line is classified whole.
+  if (process_.stderr) {
+    createInterface({ input: process_.stderr, crlfDelay: Infinity }).on('line', (line) => {
+      if (line) logAgentStderrLine(line, session.id);
+    });
+  }
   const remove = (): void => {
     if (activeContainers.get(session.id) !== record) return;
     activeContainers.delete(session.id);

@@ -18,6 +18,10 @@ luna setup step service
 
 For an unavailable container runtime, check `container system status` and start it with `container system start`. A first image build needs network access and time to download tools.
 
+## Luna replied that something went wrong
+
+Run `luna status` or `luna health`, or read `logs/luna.error.log`. The agent's model errors appear there once its retries are exhausted, together with an agent runner or tool server that failed to start and an MCP server that failed to connect. Errors that a retry absorbed are not logged there.
+
 ## Native tools do not have access
 
 Rerun `luna setup step apple`. Check macOS Privacy & Security permissions for the Luna app wrapper and verify that the configured calendar or reminder list exists. Use `luna config apple get` to inspect scope. Do not grant Full Disk Access unless a chosen integration needs it.

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, spyOn } from 'bun:test';
 import {
   APIConnectionError,
   APIConnectionTimeoutError,
@@ -13,6 +13,7 @@ import {
   formatProviderError,
   formatRateLimitRetryNotice,
   isTransientStreamError,
+  logProviderError,
   ResponsesStreamError,
   rateLimitRetryDelaySec,
   redactBaseUrl,
@@ -226,5 +227,26 @@ describe('unwrapCauseMessage', () => {
 describe('redactBaseUrl', () => {
   it('strips query strings', () => {
     expect(redactBaseUrl('http://example.com/v1?key=secret')).toBe('http://example.com/v1');
+  });
+});
+
+describe('logProviderError', () => {
+  // The host logs only the final `error:` line as an error (src/container-runner.ts).
+  function logged(opts?: { retrying?: boolean }): string {
+    const spy = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      logProviderError(new Error('503 overloaded'), opts);
+      return String(spy.mock.calls[0]?.[0]);
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it('marks a failure the caller gives up on as an error', () => {
+    expect(logged()).toBe('[openai-provider] error: 503 overloaded');
+  });
+
+  it('marks a failure the caller will retry differently', () => {
+    expect(logged({ retrying: true })).toBe('[openai-provider] retrying after error: 503 overloaded');
   });
 });

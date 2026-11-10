@@ -249,9 +249,15 @@ function detailedEndpointHints(baseURL: string): string[] {
  * user-facing text and must stay a pure function, or every caller that formats
  * a message also emits a log line and one failure shows up in the log twice
  * under two different wordings.
+ *
+ * Pass `retrying` when the caller will try the request again. The host logs
+ * only the final `error:` line as an error (container-runner.ts), so a
+ * rate limit or overload that a retry absorbs does not leave `luna health`
+ * warning until the next restart.
  */
-export function logProviderError(err: unknown): void {
-  console.error(`[openai-provider] error: ${unwrapCauseMessage(err)}`);
+export function logProviderError(err: unknown, opts: { retrying?: boolean } = {}): void {
+  const label = opts.retrying ? 'retrying after error' : 'error';
+  console.error(`[openai-provider] ${label}: ${unwrapCauseMessage(err)}`);
 }
 
 export function formatConnectionRetryNotice(
