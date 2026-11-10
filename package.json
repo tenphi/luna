@@ -42,14 +42,17 @@
     "docs:preview": "astro preview",
     "prepack": "pnpm build && pnpm check:repository",
     "docs:check-build": "cookbook check-build --out site-dist",
-    "lock:npm": "node scripts/update-npm-lock.mjs"
+    "lock:npm": "node scripts/update-npm-lock.mjs",
+    "changeset": "changeset",
+    "version:packages": "node scripts/release-version.mjs",
+    "release": "node scripts/release-publish.mjs"
   },
   "dependencies": {
     "@chat-adapter/telegram": "4.44.0",
     "@clack/prompts": "1.8.1",
-    "@tenphi/akno-client": "0.22.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@onecli-sh/sdk": "0.5.0",
+    "@tenphi/akno-client": "0.22.0",
     "better-sqlite3": "13.0.3",
     "chat": "4.44.0",
     "cron-parser": "5.10.4",
@@ -57,15 +60,19 @@
     "imapflow": "1.6.6",
     "kleur": "4.1.5",
     "nodemailer": "10.3.1",
-    "zod": "4.6.7",
     "tsx": "4.23.15",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "zod": "4.6.7"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
     "@eslint/js": "^10.0.1",
+    "@tenphi/cookbook": "0.33.1",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.20.5",
     "@types/nodemailer": "^8.0.2",
+    "astro": "7.3.2",
     "eslint": "^10.14.0",
     "eslint-plugin-no-catch-all": "^1.1.0",
     "globals": "^17.14.0",
@@ -73,9 +80,7 @@
     "knip": "^6.16.1",
     "prettier": "^3.9.10",
     "typescript-eslint": "^8.72.1",
-    "vitest": "^4.1.12",
-    "@tenphi/cookbook": "0.33.1",
-    "astro": "7.3.2"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=22.22"
@@ -119,6 +124,7 @@
     "!scripts/backfill-*",
     "!scripts/cleanup-sessions.sh",
     "!scripts/q.*",
+    "!scripts/release-*",
     "tsconfig.setup.json",
     "npm-shrinkwrap.json"
   ],

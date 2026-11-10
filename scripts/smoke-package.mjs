@@ -12,9 +12,17 @@ const env = Object.fromEntries(
   ['PATH', 'HOME', 'TMPDIR', 'LANG'].flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])),
 );
 env.LUNA_HOME = path.join(temporary, 'private-install');
+// The release job passes the tarball it is about to publish, so the bytes checked here are the bytes
+// that ship. Without an argument, pack the checkout.
+const supplied = process.argv[2] ? path.resolve(process.argv[2]) : null;
 try {
-  console.log('Packing the release artifact…');
-  execFileSync('npm', ['pack', '--pack-destination', temporary], { stdio: 'pipe', timeout: 60000 });
+  if (supplied) {
+    console.log('Checking the supplied release artifact…');
+    fs.copyFileSync(supplied, path.join(temporary, path.basename(supplied)));
+  } else {
+    console.log('Packing the release artifact…');
+    execFileSync('npm', ['pack', '--pack-destination', temporary], { stdio: 'pipe', timeout: 60000 });
+  }
   console.log('Checking release assets…');
   const tarball = fs.readdirSync(temporary).find((name) => name.endsWith('.tgz'));
   assert(tarball, 'No tarball produced');
@@ -25,6 +33,7 @@ try {
   const shipped = path.join(unpacked, 'package');
   const metadata = JSON.parse(fs.readFileSync(path.join(shipped, 'package.json'), 'utf8'));
   assert.equal(metadata.name, '@tenphi/luna');
+  assert.equal(metadata.version, JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')).version);
   assert.equal(metadata.license, 'PolyForm-Noncommercial-1.0.0');
   assert(fs.existsSync(path.join(shipped, 'npm-shrinkwrap.json')), 'The audited npm dependency graph is missing');
   for (const value of Object.values(metadata.dependencies)) assert(!/^(?:link|file|workspace|catalog):/.test(value));

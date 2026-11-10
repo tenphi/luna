@@ -36,6 +36,10 @@ For an opt-in check of repository rules and skills on the OpenAI endpoint, run `
 
 Format host code with `pnpm format`. Match the existing style in the Bun tree instead of reformatting it with the host configuration. Commit the appropriate lockfile when changing dependencies. The release-age and build-script policy in `pnpm-workspace.yaml` requires maintainer authorization for changes.
 
+## Releases
+
+A change to published behavior also carries a changeset: run `pnpm changeset`, pick the bump, write the user-facing changelog entry, and commit the generated file with the change. After it merges, the release workflow opens or updates a separate version PR, and merging that PR publishes. See [release preparation](docs/releasing.md#npm-release).
+
 ## Review
 
 Explain the concrete problem, resulting behavior, and relevant validation. Check the diff for installation-specific files and invented fixtures. Do not include private logs or traces to make a reproduction easier.

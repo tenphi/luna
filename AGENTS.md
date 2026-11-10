@@ -45,6 +45,6 @@ Use `gpt-6-luna` for explicitly run live language-model verification. Never subs
 
 Use frozen lockfiles in CI and automated builds. Do not change `onlyBuiltDependencies` without human authorization. Release-age exclusions are listed in `pnpm-workspace.yaml` and require maintainer authorization; every other dependency keeps the three-day gate.
 
-Never publish npm, push history rewrites, or change repository visibility without maintainer approval. Prepare and audit concrete artifacts first. See [release preparation](docs/releasing.md).
+Publishing happens only when a maintainer merges the Changesets release PR; never publish npm by hand, tag a release, push history rewrites, or change repository visibility without maintainer approval. A change to published behavior carries a `.changeset/*.md` file. See [release preparation](docs/releasing.md).
 
 Work in the current branch unless asked otherwise. Commits require authorization.
