@@ -86,7 +86,7 @@ export async function startHostMcpSupervisor(): Promise<HostMcpSupervisorState |
     const provider = await resolveProviderForGroup(agentGroupId, serverName);
     if (!provider) return null;
 
-    let bridge: StdioProviderBridge | null = null;
+    let bridge: StdioProviderBridge;
 
     if (provider.kind === 'builtin') {
       const bridgeFactory = builtins.bridges[serverName];

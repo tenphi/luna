@@ -443,12 +443,10 @@ export function getRoutingBySeq(
   seq: number,
 ): { channel_type: string | null; platform_id: string | null; thread_id: string | null } | null {
   const inRow = db.prepare('SELECT channel_type, platform_id, thread_id FROM messages_in WHERE seq = ?').get(seq) as
-    | { channel_type: string | null; platform_id: string | null; thread_id: string | null }
-    | undefined;
+    { channel_type: string | null; platform_id: string | null; thread_id: string | null } | undefined;
   if (inRow) return inRow;
   const outRow = db.prepare('SELECT channel_type, platform_id, thread_id FROM messages_out WHERE seq = ?').get(seq) as
-    | { channel_type: string | null; platform_id: string | null; thread_id: string | null }
-    | undefined;
+    { channel_type: string | null; platform_id: string | null; thread_id: string | null } | undefined;
   return outRow ?? null;
 }
 
@@ -477,8 +475,7 @@ export type DeliveryStatus = 'delivered' | 'failed' | 'dismissed';
 
 export function getDeliveryStatus(db: Database.Database, messageOutId: string): DeliveryStatus | undefined {
   const row = db.prepare('SELECT status FROM delivered WHERE message_out_id = ?').get(messageOutId) as
-    | { status: DeliveryStatus }
-    | undefined;
+    { status: DeliveryStatus } | undefined;
   return row?.status;
 }
 
@@ -619,8 +616,7 @@ function parseStoredMessageText(
  */
 export function getInboundTimestampMs(db: Database.Database, messageId: string): number | null {
   const row = db.prepare('SELECT kind, timestamp, status_changed FROM messages_in WHERE id = ?').get(messageId) as
-    | { kind: string; timestamp: string; status_changed: string | null }
-    | undefined;
+    { kind: string; timestamp: string; status_changed: string | null } | undefined;
   if (!row) return null;
 
   // A recurring occurrence is inserted when the previous run completes, so
@@ -636,8 +632,7 @@ export function getInboundTimestampMs(db: Database.Database, messageId: string):
 /** An inbound row's source_session_id by message id (a2a return path). */
 export function getInboundSourceSessionId(db: Database.Database, messageId: string): string | null {
   const row = db.prepare('SELECT source_session_id FROM messages_in WHERE id = ?').get(messageId) as
-    | { source_session_id: string | null }
-    | undefined;
+    { source_session_id: string | null } | undefined;
   return row?.source_session_id ?? null;
 }
 

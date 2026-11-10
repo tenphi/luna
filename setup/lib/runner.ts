@@ -242,10 +242,10 @@ export async function fail(stepName: string, message: string, hint?: string, _ra
   prompts.cancel('Setup aborted.');
   process.exit(1);
 }
-export function ensureAnswer<T>(value: T | symbol): T {
+export function ensureAnswer<T>(value: T | symbol): Exclude<T, symbol> {
   if (prompts.isCancel(value)) {
     prompts.cancel('Setup cancelled.');
     process.exit(0);
   }
-  return value as T;
+  return value as Exclude<T, symbol>;
 }

@@ -22,11 +22,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -54,7 +54,7 @@ jobs:
         run: |
           mkdir -p release
           npm pack --pack-destination release
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: luna-npm-tarball
           path: release/*.tgz
@@ -69,12 +69,12 @@ jobs:
       id-token: write
     environment: npm
     steps:
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: '22.22.0'
           registry-url: https://registry.npmjs.org
       - run: npm install --global npm@11.19.0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: luna-npm-tarball
           path: release

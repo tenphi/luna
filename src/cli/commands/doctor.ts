@@ -27,7 +27,7 @@ register({
       detail: envPath,
     });
 
-    let imageOk = false;
+    let imageOk: boolean;
     try {
       const { execFileSync } = await import('child_process');
       execFileSync('container', ['image', 'inspect', CONTAINER_IMAGE], { stdio: 'ignore' });

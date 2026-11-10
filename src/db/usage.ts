@@ -144,11 +144,9 @@ export function getUsageSummary(
 
   const today = db.prepare(`SELECT ${SUM_COLUMNS} FROM usage_daily WHERE day = ?`).get(day) as UsageRow | undefined;
   const monthRow = db.prepare(`SELECT ${SUM_COLUMNS} FROM usage_daily WHERE day LIKE ?`).get(`${month}-%`) as
-    | UsageRow
-    | undefined;
+    UsageRow | undefined;
   const session = db.prepare(`SELECT ${SUM_COLUMNS} FROM usage_daily WHERE session_id = ?`).get(scope.sessionId) as
-    | UsageRow
-    | undefined;
+    UsageRow | undefined;
 
   const episodeId = scope.episodeId?.trim();
   const topic = episodeId
@@ -158,8 +156,7 @@ export function getUsageSummary(
     : undefined;
 
   const latest = db.prepare('SELECT MAX(updated_at) AS updated_at FROM usage_daily').get() as
-    | { updated_at: string | null }
-    | undefined;
+    { updated_at: string | null } | undefined;
 
   return {
     today: toTotals(today),

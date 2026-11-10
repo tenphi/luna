@@ -61,12 +61,10 @@ function noteReplyForDigest(db: Database.Database, msg: WriteOutbound): void {
         ? (db
             .prepare("SELECT id, series_id, process_after, timestamp FROM messages_in WHERE id = ? AND kind = 'task'")
             .get(msg.in_reply_to) as
-            | { id: string; series_id: string | null; process_after: string | null; timestamp: string }
-            | undefined)
+            { id: string; series_id: string | null; process_after: string | null; timestamp: string } | undefined)
         : undefined;
       const stored = db.prepare('SELECT timestamp FROM messages_out WHERE id = ?').get(msg.id) as
-        | { timestamp: string }
-        | undefined;
+        { timestamp: string } | undefined;
       const at = stored ? Date.parse(`${stored.timestamp.replace(' ', 'T')}Z`) : Date.now();
       const reply = { itemId: msg.id, text: content.text, at };
       if (run) {

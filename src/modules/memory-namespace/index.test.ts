@@ -6,8 +6,7 @@ const state = vi.hoisted(() => ({
   pending: [] as Array<{ approval_id: string; payload: string; status: string; created_at: string }>,
   requested: [] as unknown[],
   handler: null as
-    | null
-    | ((ctx: { payload: Record<string, unknown>; notify: (text: string) => void }) => Promise<void>),
+    null | ((ctx: { payload: Record<string, unknown>; notify: (text: string) => void }) => Promise<void>),
   caller: { agentGroupId: 'group-1', sessionId: 'session-1' },
 }));
 

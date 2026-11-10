@@ -82,8 +82,7 @@ function toCached(row: Row): CachedMessage {
 
 export function getCachedMessage(mailbox: string, gmMsgId: string): CachedMessage | null {
   const row = getMailDb().prepare('SELECT * FROM messages WHERE mailbox = ? AND gm_msgid = ?').get(mailbox, gmMsgId) as
-    | Row
-    | undefined;
+    Row | undefined;
   return row ? toCached(row) : null;
 }
 

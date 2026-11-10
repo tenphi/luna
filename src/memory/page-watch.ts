@@ -333,8 +333,7 @@ export function readStoredMemoryEdit(
 ): { file: string; diff: string; nextOffset: number | null } {
   if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('offset must be a nonnegative integer');
   const row = db.prepare("SELECT content FROM messages_in WHERE id = ? AND kind = 'memory_edit'").get(id) as
-    | { content: string }
-    | undefined;
+    { content: string } | undefined;
   if (!row) throw new Error('No saved external memory edit with that id in this session.');
   const content = JSON.parse(row.content) as { file: string; fullDiff?: string; diff: string };
   const text = content.fullDiff ?? content.diff;

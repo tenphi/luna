@@ -9,6 +9,3 @@ minimumReleaseAge: 4320
 minimumReleaseAgeExclude:
   - '@tenphi/akno-client'
   - '@tenphi/akno-protocol'
-  - '@tenphi/cookbook@0.24.0'
-  - '@tenphi/docs@0.24.0'
-  - '@tenphi/renderer@0.24.0'

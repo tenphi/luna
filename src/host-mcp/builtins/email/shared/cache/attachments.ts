@@ -27,8 +27,7 @@ export function hashBytes(bytes: Buffer): string {
 
 export function getExtractedText(sha256: string): ExtractedText | null {
   const row = getMailDb().prepare('SELECT text, method FROM attachment_text WHERE sha256 = ?').get(sha256) as
-    | { text: string; method: string }
-    | undefined;
+    { text: string; method: string } | undefined;
   return row ? { text: row.text, method: row.method as ExtractionMethod } : null;
 }
 

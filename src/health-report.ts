@@ -763,7 +763,7 @@ function collectRuntime(): RuntimeHealthSection {
     registered: Boolean(getChannelAdapter(t)),
   }));
   const unregistered = channels.filter((c) => !c.registered);
-  let sessions: RuntimeSessionHealth[] = [];
+  let sessions: RuntimeSessionHealth[];
   try {
     sessions = getActiveSessions().map((s) => {
       const live = getLiveness(s.id);

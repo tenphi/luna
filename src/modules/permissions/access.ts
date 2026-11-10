@@ -18,8 +18,7 @@ import { resolveUserKey } from '../../users/binding.js';
 import { ownerKey, rosterUser } from '../../users/roster.js';
 
 export type AccessDecision =
-  | { allowed: true; reason: 'owner' | 'member' }
-  | { allowed: false; reason: 'unknown_user' | 'user_disabled' };
+  { allowed: true; reason: 'owner' | 'member' } | { allowed: false; reason: 'unknown_user' | 'user_disabled' };
 
 /**
  * Can this user interact with this agent group?

@@ -145,7 +145,10 @@ async function serializeAttachment(attachment: Attachment): Promise<Record<strin
     ['type', 'name', 'mimeType', 'size', 'width', 'height'].map((key) => [key, fields[key]]),
   );
   try {
-    if (attachment.fetchData) result.data = Buffer.from(await attachment.fetchData()).toString('base64');
+    if (attachment.fetchData) {
+      const data = await attachment.fetchData();
+      result.data = (Buffer.isBuffer(data) ? data : Buffer.from(data)).toString('base64');
+    }
   } catch (error) {
     log.warn('Could not retrieve an incoming attachment', { type: attachment.type, error });
   }

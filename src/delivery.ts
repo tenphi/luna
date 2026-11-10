@@ -193,8 +193,7 @@ function caption(content: Record<string, unknown>, row: Outgoing, handle: Handle
   if (typeof content.text !== 'string' || !content.text.includes('/workspace/')) return JSON.stringify(content);
   const inbound = row.in_reply_to
     ? (handle.prepare('SELECT content FROM messages_in WHERE id = ?').get(row.in_reply_to) as
-        | { content: string }
-        | undefined)
+        { content: string } | undefined)
     : undefined;
   let request = inbound?.content ?? '';
   try {

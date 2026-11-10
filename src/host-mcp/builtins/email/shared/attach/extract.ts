@@ -76,7 +76,7 @@ function runHelper(filePath: string): Promise<HelperResult> {
     execFile(binary, [filePath], { timeout: EXTRACT_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => {
       // The helper reports failures as JSON on stdout with a non-zero exit, so a parseable body is
       // preferred over the process error even when the exit code is set.
-      let parsed: HelperResult | null = null;
+      let parsed: HelperResult | null;
       try {
         parsed = JSON.parse(stdout) as HelperResult;
       } catch {

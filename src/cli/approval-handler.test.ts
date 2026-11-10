@@ -71,8 +71,7 @@ function now(): string {
 function readCliResponse(agentGroupId: string, sessionId: string, requestId: string) {
   const db = new Database(sessionDbPath(agentGroupId, sessionId), { readonly: true });
   const row = db.prepare('SELECT content FROM messages_in WHERE content LIKE ?').get(`%"requestId":"${requestId}"%`) as
-    | { content: string }
-    | undefined;
+    { content: string } | undefined;
   db.close();
   if (!row) return null;
   return JSON.parse(row.content) as { type: string; requestId: string; frame: { ok: boolean } };
@@ -159,8 +158,7 @@ describe('cli_command approval handler', () => {
     });
 
     const row = getDb().prepare('SELECT local_name FROM agent_destinations WHERE agent_group_id = ?').get(SOURCE) as
-      | { local_name: string }
-      | undefined;
+      { local_name: string } | undefined;
     expect(row?.local_name).toBe('helper');
 
     const cliResp = readCliResponse(SOURCE, SESSION, requestId);

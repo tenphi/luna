@@ -11,8 +11,7 @@ export interface InstallSettingsRow {
 
 export function getMcpToolFilters(): McpToolFiltersByServer {
   const row = getDb().prepare('SELECT mcp_tool_filters FROM install_settings WHERE id = ?').get(ROW_ID) as
-    | Pick<InstallSettingsRow, 'mcp_tool_filters'>
-    | undefined;
+    Pick<InstallSettingsRow, 'mcp_tool_filters'> | undefined;
   if (!row) return {};
   return JSON.parse(row.mcp_tool_filters) as McpToolFiltersByServer;
 }

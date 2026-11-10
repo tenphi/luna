@@ -75,8 +75,7 @@ registerResource({
         }
 
         const row = getDb().prepare('SELECT id, kind FROM users WHERE id = ?').get(userId) as
-          | { id: string; kind: string }
-          | undefined;
+          { id: string; kind: string } | undefined;
         if (!row) {
           throw new Error(
             `No identity "${userId}" has been seen yet. It appears once they message Luna — check \`luna config users\` for unclaimed identities.`,

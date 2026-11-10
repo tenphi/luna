@@ -1784,10 +1784,12 @@ const HOLD_LABEL: Record<HoldReason, string> = {
   conflict: 'conflicts with memory',
   language_mismatch: 'wrong language',
   language_policy_required: 'language unset',
+  // Reported as skipped, never as held; see the memory note.
+  stop_word: 'stop word',
 };
 
-/** Akno's hold for `maintenance.retain.stop_words`; newer than the client this Luna is typed against. */
-const STOP_WORD = 'stop_word';
+/** Akno's hold for `maintenance.retain.stop_words`. */
+const STOP_WORD: HoldReason = 'stop_word';
 
 /** A held entry with no hold reason carries Akno's outcome instead. */
 const OUTCOME_HOLD_LABEL: Record<string, string> = {

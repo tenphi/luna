@@ -83,8 +83,7 @@ export async function notifyOwnerOfUnknownSender(input: RosterNoticeInput): Prom
   // binding happens on their next message; without it — a Telegram account with no public @username —
   // `luna users bind` is the only way in, which is precisely when it needs to be spelled out.
   const stored = getDb().prepare('SELECT platform_username FROM users WHERE id = ?').get(input.userId) as
-    | { platform_username: string | null }
-    | undefined;
+    { platform_username: string | null } | undefined;
   const handle = stored?.platform_username ?? null;
 
   // Plain text, not a card: there is no button that could admit them. The action is an edit to config
