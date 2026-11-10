@@ -28,7 +28,7 @@ export function setContainerToolInFlight(tool: string, declaredTimeoutMs: number
     .catch(() => {});
 }
 
-/** Clear the in-flight tool — called on PostToolUse / PostToolUseFailure. */
+/** Clear the in-flight tool — called when a tool call finishes or fails. */
 export function clearContainerToolInFlight(): void {
   void getSessionClient()
     .ping({ setTool: true, tool: null, toolDeclaredTimeoutMs: null, toolStartedAt: null })

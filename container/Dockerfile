@@ -25,7 +25,7 @@ ARG TAVILY_MCP_VERSION=0.2.20
 ARG BUN_VERSION=1.3.12
 
 # ---- System dependencies -----------------------------------------------------
-# tini: correct PID 1 / signal forwarding so outbound.db writes finalize on
+# tini: correct PID 1 / signal forwarding so in-flight Session API writes finish on
 # SIGTERM instead of being orphaned by the shell entrypoint.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \

@@ -69,7 +69,7 @@ async function main(): Promise<void> {
   const ok = await wakeContainer(session);
   console.log('wakeContainer:', ok ? 'spawned' : 'failed/skipped');
   console.log('Watch: container logs $(container ls --quiet | grep luna- | head -1)');
-  console.log('Then check outbound: pnpm exec tsx scripts/q.ts data/sessions/.../outbound.db "SELECT ..."');
+  console.log('Then check the reply: pnpm exec tsx scripts/q.ts data/sessions/.../session.db "SELECT ... FROM messages_out"');
 }
 
 main().catch((err) => {

@@ -1,9 +1,9 @@
 /**
  * Delivery action handler for CLI requests from container agents.
  *
- * When an agent writes a `cli_request` system message to outbound.db,
- * the delivery poll picks it up and calls this handler. We dispatch
- * the command and write the response back to inbound.db.
+ * When an agent sends a `cli_request` system message (an outbound row in its
+ * session.db), the delivery poll picks it up and calls this handler. We
+ * dispatch the command and write the response back as an inbound row.
  */
 import { registerDeliveryAction } from '../delivery.js';
 import { insertMessage } from '../db/session-db.js';
@@ -33,7 +33,7 @@ registerDeliveryAction('cli_request', async (content, session, inDb) => {
 
   const response = await dispatch(req, ctx);
 
-  // Write response to inbound.db so the container can read it.
+  // Write the response as an inbound row so the container can read it.
   // trigger=0: don't wake the agent — this is an inline response to a tool call.
   insertMessage(inDb, {
     id: `cli-resp-${requestId}`,

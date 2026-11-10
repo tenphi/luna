@@ -34,7 +34,7 @@ export interface SessionContextStats {
   toolResultChars: number;
   largestToolResultChars: number;
   hasSummaryMessage: boolean;
-  continuationSource?: 'outbound.db' | 'explicit';
+  continuationSource?: 'session.db' | 'explicit';
 }
 
 function measureMessages(messages: ChatMessage[]): {
@@ -93,22 +93,22 @@ function readSessionFile(sessionsDir: string, sessionId: string): SessionPayload
   }
 }
 
-function findNewestOutbound(agentGroupId: string): string | null {
+function findNewestSessionDb(agentGroupId: string): string | null {
   const base = path.join(SESSIONS_DIR, agentGroupId);
   if (!fs.existsSync(base)) return null;
   let newest: { path: string; mtime: number } | null = null;
   for (const sess of fs.readdirSync(base, { withFileTypes: true })) {
     if (!sess.isDirectory()) continue;
-    const outbound = path.join(base, sess.name, 'outbound.db');
-    if (!fs.existsSync(outbound)) continue;
-    const mtime = fs.statSync(outbound).mtimeMs;
-    if (!newest || mtime > newest.mtime) newest = { path: outbound, mtime };
+    const sessionDb = path.join(base, sess.name, 'session.db');
+    if (!fs.existsSync(sessionDb)) continue;
+    const mtime = fs.statSync(sessionDb).mtimeMs;
+    if (!newest || mtime > newest.mtime) newest = { path: sessionDb, mtime };
   }
   return newest?.path ?? null;
 }
 
-function continuationFromOutbound(outboundPath: string, provider = 'openai'): string | undefined {
-  const db = new Database(outboundPath, { readonly: true });
+function continuationFromSessionDb(sessionDbPath: string, provider = 'openai'): string | undefined {
+  const db = new Database(sessionDbPath, { readonly: true });
   try {
     const key = `continuation:${provider.toLowerCase()}`;
     const row = db.prepare('SELECT value FROM session_state WHERE key = ?').get(key) as { value: string } | undefined;
@@ -131,15 +131,15 @@ export function inspectSessionContext(opts: {
   let continuationSource: SessionContextStats['continuationSource'] = opts.continuation ? 'explicit' : undefined;
 
   if (!sessionId && opts.useSession) {
-    const outbound = findNewestOutbound(group.id);
-    if (!outbound) throw new Error('No session outbound.db found for this agent');
-    sessionId = continuationFromOutbound(outbound, opts.provider ?? 'openai');
-    continuationSource = 'outbound.db';
-    if (!sessionId) throw new Error('No continuation stored in outbound.db for this provider');
+    const sessionDb = findNewestSessionDb(group.id);
+    if (!sessionDb) throw new Error('No session.db found for this agent');
+    sessionId = continuationFromSessionDb(sessionDb, opts.provider ?? 'openai');
+    continuationSource = 'session.db';
+    if (!sessionId) throw new Error('No continuation stored in session.db for this provider');
   }
 
   if (!sessionId) {
-    throw new Error('Provide --continuation <id> or --session to resolve from outbound.db');
+    throw new Error('Provide --continuation <id> or --session to resolve from session.db');
   }
 
   const payload = readSessionFile(sessionsDir, sessionId);

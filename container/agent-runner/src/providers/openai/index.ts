@@ -3,20 +3,22 @@ import { topicChoice } from './episodes/decisions.js';
  * Native OpenAI-compatible agent provider.
  *
  * Talks to any OpenAI-compatible `/v1` endpoint (OpenAI, llama.cpp, LM Studio,
- * vLLM, Ollama's OpenAI shim, etc.). Unlike the Claude provider — which
- * delegates the agent loop, built-in tools, and instruction loading to the
- * Claude Code CLI — this provider implements all of that itself:
+ * vLLM, Ollama's OpenAI shim, etc.) and implements the agent itself:
  *
- *   - streaming chat-completions with tool (function) calling
+ *   - streaming model calls with function tools: the Responses API when
+ *     `OPENAI_API=responses` or the endpoint is api.openai.com, Chat
+ *     Completions otherwise
  *   - a self-driven agent loop that executes tool calls and continues until
  *     the model emits a text-only turn
- *   - built-in tools (Bash/Read/Write/Edit/Glob/Grep)
+ *   - built-in tools (Bash/Read/Write/Edit/Glob/Grep/Skill)
  *   - an MCP stdio bridge exposing the `luna` server + any extra servers
  *   - instruction assembly (flatten the composed AGENTS.md import graph)
  *   - stateless-session persistence (history file keyed by an opaque id)
  *
  * Config is sourced from env (injected by the host's `src/providers/openai.ts`
- * container contribution and/or OneCLI): OPENAI_BASE_URL, OPENAI_API_KEY.
+ * container contribution and/or OneCLI): OPENAI_BASE_URL, OPENAI_API_KEY,
+ * OPENAI_API, OPENAI_MODEL. With the ChatGPT subscription the base URL is the
+ * host's Session API relay.
  */
 import path from 'path';
 
@@ -1339,8 +1341,8 @@ export class OpenAIProvider implements AgentProvider {
         }
       }
 
-      // Turn complete. Wait for a follow-up push or end signal, mirroring the
-      // Claude provider's open-stream behavior.
+      // Turn complete. Keep the query open for a follow-up push or the end
+      // signal.
       // Fact extraction drains in the poll loop (background) so it never blocks
       // the next user turn.
       while (!ctrl.hasPending() && !ctrl.isEnded() && !ctrl.isAborted()) {

@@ -4,7 +4,7 @@ import { log } from '../../log.js';
 import { registerResource } from '../crud.js';
 
 /**
- * Project the agent's central `agent_destinations` rows into every active session's inbound.db.
+ * Project the agent's central `agent_destinations` rows into every active session's session.db.
  *
  * Called from both `add` and `remove` so the live container picks up the
  * change without waiting for the next spawn. Without this, send_message to
@@ -18,7 +18,7 @@ async function projectDestinationsToSessions(agentGroupId: string): Promise<void
     try {
       writeDestinations(agentGroupId, session.id);
     } catch (err) {
-      log.warn('Failed to project destinations to session inbound.db', { agentGroupId, sessionId: session.id, err });
+      log.warn('Failed to project destinations to session.db', { agentGroupId, sessionId: session.id, err });
     }
   }
 }

@@ -1,11 +1,11 @@
 /**
  * Conversation persistence for the OpenAI provider.
  *
- * OpenAI chat-completions is stateless — there is no server-side session to
- * resume. To honor the poll-loop's continuation contract we persist the full
+ * The model API keeps no server-side session to resume (Chat Completions, and
+ * Responses with `store: false`). To honor the poll-loop's continuation contract we persist the full
  * running message array (system message excluded; it's rebuilt each turn) to
  * a JSON file keyed by an opaque UUID. The UUID is the "continuation" the
- * poll-loop stores per-provider in outbound.db.
+ * poll-loop stores per provider in the session's `session_state` table.
  */
 import fs from 'fs';
 import path from 'path';

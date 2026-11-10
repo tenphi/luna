@@ -1,6 +1,6 @@
 /**
  * Regression test for #2465 — approval-path `luna destinations add/remove`
- * must hydrate every active session's `inbound.db` `destinations` table,
+ * must hydrate every active session's `session.db` `destinations` table,
  * not just the central `agent_destinations` row.
  *
  * The approval handler in `dispatch.ts` re-enters `dispatch()` with
@@ -45,7 +45,7 @@ function readSessionDestinations(agentGroupId: string, sessionId: string) {
   return rows;
 }
 
-describe('destinations CLI custom ops project to inbound.db (#2465)', () => {
+describe('destinations CLI custom ops project to session.db (#2465)', () => {
   const SOURCE = 'ag-source';
   const TARGET = 'ag-target';
   const SESSION_A = 'sess-source-1';
@@ -90,8 +90,8 @@ describe('destinations CLI custom ops project to inbound.db (#2465)', () => {
     for (const sid of [SESSION_A, SESSION_B]) fs.rmSync(sessionDir(SOURCE, sid), { recursive: true, force: true });
   });
 
-  it('add: projects the new destination into every active session inbound.db', async () => {
-    // Sanity: inbound.db starts with no destinations.
+  it('add: projects the new destination into every active session session.db', async () => {
+    // Sanity: session.db starts with no destinations.
     expect(readSessionDestinations(SOURCE, SESSION_A)).toEqual([]);
     expect(readSessionDestinations(SOURCE, SESSION_B)).toEqual([]);
 
@@ -120,7 +120,7 @@ describe('destinations CLI custom ops project to inbound.db (#2465)', () => {
     }
   });
 
-  it('remove: clears the destination from every active session inbound.db', async () => {
+  it('remove: clears the destination from every active session session.db', async () => {
     await dispatch(
       {
         id: 'req-add',

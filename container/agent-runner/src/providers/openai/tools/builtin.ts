@@ -1,14 +1,13 @@
 /**
  * Built-in tools for the OpenAI provider.
  *
- * The Claude provider gets Bash/Read/Write/Edit/Glob/Grep for free from the
- * Claude Code CLI. A raw OpenAI endpoint only does chat-completions with
- * function calling, so we implement the equivalent surface here and expose
- * each as an OpenAI function tool.
+ * An OpenAI-compatible endpoint only offers function calling, so the agent's
+ * shell, file, search and skill tools (Bash/Read/Write/Edit/Glob/Grep/Skill)
+ * are implemented here and exposed as function tools.
  *
- * In-flight tracking mirrors the Claude PreToolUse/PostToolUse hooks: we
- * record the running tool (and any declared Bash timeout) via a liveness ping
- * so the host sweep can widen its stuck tolerance for long-running commands.
+ * Each call records the running tool (and any declared Bash timeout) via a
+ * liveness ping, so the host sweep can widen its stuck tolerance for
+ * long-running commands.
  */
 import { spawn } from 'child_process';
 import fs from 'fs';
@@ -526,7 +525,7 @@ export function isBuiltinTool(name: string): boolean {
 
 /**
  * Dispatch a built-in tool call, recording it as in-flight for the host
- * sweep (mirrors the Claude PreToolUse/PostToolUse hooks).
+ * sweep.
  * `signal` cancels in-flight Bash (process-group SIGKILL); other tools ignore it.
  */
 export async function callBuiltinTool(

@@ -2,8 +2,8 @@
  * Per-session liveness, tracked in-memory on the host.
  *
  * Replaces the old `.heartbeat` file mtime + `container_state` table. The
- * container pings the Session API (heartbeat on activity; tool-in-flight on
- * PreToolUse / cleared on PostToolUse). The host sweep and the typing module
+ * container pings the Session API (heartbeat on activity; tool-in-flight set
+ * when a tool call starts and cleared when it finishes). The host sweep and the typing module
  * read this map instead of stat-ing a file or querying a DB.
  *
  * State is intentionally ephemeral: on host restart every entry resets to

@@ -12,8 +12,8 @@
  *   pnpm exec tsx scripts/measure-system-prompt.ts  (legacy wrapper)
  *
  * Options:
- *   --inbound <path>    Use destinations from a session inbound.db for runtime addendum
- *   --session           Pick the newest inbound.db for this group's install agent
+ *   --inbound <path>    Use destinations from a session.db for runtime addendum
+ *   --session           Pick the newest session.db for this group's install agent
  *   --no-runtime        Omit runtime addendum (identity + destinations)
  *   --no-mcp            Skip MCP tool probing (requires Bun; see below)
  *   --tokens            Also print ~token estimate (chars / 4)
@@ -133,8 +133,8 @@ function usage(): never {
   console.error(`Usage: pnpm exec tsx scripts/measure-system-prompt.ts [options]
 
 Options:
-  --inbound <path>    Session inbound.db for live destinations addendum
-  --session           Newest inbound.db for the install agent
+  --inbound <path>    Session session.db for live destinations addendum
+  --session           Newest session.db for the install agent
   --no-runtime        Skip runtime addendum
   --no-mcp            Skip tool-definition measurement
   --tokens            Show ~token estimate (chars / 4)
@@ -395,11 +395,11 @@ function findSessionInbound(agentGroupId: string): string | null {
   let newest: { path: string; mtime: number } | null = null;
   for (const sess of fs.readdirSync(base, { withFileTypes: true })) {
     if (!sess.isDirectory()) continue;
-    const inbound = path.join(base, sess.name, 'inbound.db');
-    if (!fs.existsSync(inbound)) continue;
-    const mtime = fs.statSync(inbound).mtimeMs;
+    const sessionDb = path.join(base, sess.name, 'session.db');
+    if (!fs.existsSync(sessionDb)) continue;
+    const mtime = fs.statSync(sessionDb).mtimeMs;
     if (!newest || mtime > newest.mtime) {
-      newest = { path: inbound, mtime };
+      newest = { path: sessionDb, mtime };
     }
   }
   return newest?.path ?? null;
@@ -583,7 +583,7 @@ export async function measureAgent(opts: MeasureOptions): Promise<MeasureResult>
       const agId = agentGroup.id;
       inbound = findSessionInbound(agId) ?? undefined;
       if (!inbound) {
-        throw new Error(`No session inbound.db found under data/sessions/${agId}/`);
+        throw new Error(`No session.db found under data/sessions/${agId}/`);
       }
       runtimeSource = path.relative(PROJECT_ROOT, inbound);
     } else if (inbound) {

@@ -5,7 +5,7 @@ registerResource({
   plural: 'sessions',
   table: 'sessions',
   description:
-    'Session — the runtime unit. Maps one (agent_group, messaging_group, thread) combination to a container with its own inbound.db and outbound.db. Created automatically by the router when a message arrives.',
+    'Session — the runtime unit. Maps one (agent_group, messaging_group, thread) combination to a container with its own session.db. Created automatically by the router when a message arrives.',
   idColumn: 'id',
   scopeField: 'agent_group_id',
   columns: [

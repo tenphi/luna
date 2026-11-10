@@ -35,7 +35,7 @@ function makeSession(over: Partial<Session>): Session {
 function mkSessionDir(id: string, group = 'ag-1'): string {
   const dir = path.join(baseDir, group, id);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'inbound.db'), '');
+  fs.writeFileSync(path.join(dir, 'session.db'), '');
   return dir;
 }
 
