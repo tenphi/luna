@@ -37,7 +37,7 @@ Luna uses the same Changesets release-PR loop as Akno. A change to published beh
 pnpm changeset
 ```
 
-Choose the semver bump and write the user-facing changelog entry, then commit the generated `.changeset/*.md` file with the change. Documentation, tests, CI, and internal tooling that do not change the npm package need no changeset.
+Choose the semver bump and write the user-facing changelog entry, then commit the generated `.changeset/*.md` file with the change. The entry also becomes the GitHub release notes, where repository-relative links do not resolve, so link documentation as `https://luna.tenphi.me/...`. Documentation, tests, CI, and internal tooling that do not change the npm package need no changeset.
 
 When changes reach `main`, [`release.yml`](https://github.com/tenphi/luna/blob/main/.github/workflows/release.yml) opens or updates one `chore: release package` PR. It consumes the pending changesets, bumps `package.json` and `npm-shrinkwrap.json`, and writes `CHANGELOG.md`, so the exact release diff is reviewable. Merging that PR runs every gate again on the merge commit: repository and history scans, Gitleaks, typecheck, lint, Knip, format, both test suites, the production audit, the docs build, and the package install smoke. It then publishes the one tarball it packed and smoke-tested, tags it `v<version>`, and creates the GitHub release with the changelog entry and the tarball attached. Do not tag or publish by hand.
 
