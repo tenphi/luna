@@ -75,7 +75,7 @@
     "typescript-eslint": "^8.72.1",
     "vitest": "^4.1.12",
     "@tenphi/cookbook": "0.33.1",
-    "astro": "7.4.7"
+    "astro": "7.3.2"
   },
   "engines": {
     "node": ">=22.22"
