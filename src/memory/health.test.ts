@@ -211,8 +211,37 @@ describe('memory maintenance health', () => {
 
   it('reports an unavailable connection separately', async () => {
     mock.read.mockRejectedValue(new Error('socket closed'));
-    expect(await health()).toMatchObject({ ok: false, writable: false, maintenance: { state: 'unavailable' } });
+    expect(await health()).toMatchObject({
+      ok: false,
+      writable: false,
+      detail: 'Memory connection is unavailable.',
+      maintenance: { state: 'unavailable' },
+    });
     expect(mock.command).not.toHaveBeenCalled();
+  });
+
+  it('names the Akno version it connected to', async () => {
+    mock.read.mockImplementation(async (work) =>
+      work({ hello: { commands: ['plan'], writable: true, version: '0.22.0' }, command: mock.command }),
+    );
+    expect((await health()).detail).toBe('Connected to Akno 0.22.0; memory reads and writes are available.');
+  });
+
+  it('says which side to upgrade when Akno refuses the protocol, without the socket path', async () => {
+    const { MemoryUnavailable } = await import('./client.js');
+    mock.read.mockRejectedValue(
+      new MemoryUnavailable(
+        'no memory service at /private/invented/akno.sock: Akno version mismatch: client speaks protocol 5, ' +
+          'server speaks 6. Upgrade one of them.',
+      ),
+    );
+    const result = await health();
+    expect(result).toMatchObject({
+      ok: false,
+      detail:
+        'Akno version mismatch: client speaks protocol 5, server speaks 6. Upgrade Luna or Akno so both speak the same protocol.',
+    });
+    expect(JSON.stringify(result)).not.toContain('/private');
   });
 
   it('keeps read-only connection status separate from healthy maintenance', async () => {

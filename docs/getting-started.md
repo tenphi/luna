@@ -25,8 +25,6 @@ The first agent image build downloads its tools and can take several minutes. Le
 
 ## Install Luna
 
-After the first npm release:
-
 ```bash
 npm install -g @tenphi/luna
 luna setup

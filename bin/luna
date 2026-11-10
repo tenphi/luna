@@ -5,33 +5,73 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
+// Everything the package owns in an install directory. A refresh replaces each entry whole, so a file
+// that a release removed cannot linger. Config, credentials, data, logs and agent state live elsewhere.
+const SHIPPED = ['bin', 'src', 'dist', 'setup', 'scripts', 'container', 'tsconfig.json', 'package.json', 'pnpm-workspace.yaml', '.nvmrc'];
+const MARKER = '.luna-package-version';
+
 const packageRoot = path.dirname(path.dirname(fs.realpathSync(fileURLToPath(import.meta.url))));
-const metadata = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
 const checkout = fs.existsSync(path.join(packageRoot, '.git'));
-const materialized = fs.existsSync(path.join(packageRoot, '.luna-package-version'));
+const materialized = fs.existsSync(path.join(packageRoot, MARKER));
 const installRoot = checkout || materialized ? packageRoot : path.resolve(process.env.LUNA_HOME || path.join(os.homedir(), '.luna'));
 if (process.platform !== 'darwin') {
   console.error('Luna requires a macOS host.');
   process.exit(1);
 }
+
+function packageVersion(root) {
+  return JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+}
+
+function installedVersion(root) {
+  const marker = path.join(root, MARKER);
+  return fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim() : '';
+}
+
+/** Copy the package's runtime assets into the install, swapping each shipped entry in whole. */
+function refresh(source, target) {
+  for (const name of SHIPPED) {
+    const destination = path.join(target, name);
+    const staged = `${destination}.luna-new`;
+    const retired = `${destination}.luna-old`;
+    fs.rmSync(staged, { recursive: true, force: true });
+    fs.rmSync(retired, { recursive: true, force: true });
+    if (fs.existsSync(path.join(source, name))) fs.cpSync(path.join(source, name), staged, { recursive: true });
+    if (fs.existsSync(destination)) fs.renameSync(destination, retired);
+    if (fs.existsSync(staged)) fs.renameSync(staged, destination);
+    fs.rmSync(retired, { recursive: true, force: true });
+  }
+  fs.mkdirSync(path.join(target, 'config'), { recursive: true });
+  fs.copyFileSync(path.join(source, 'config/default.jsonc'), path.join(target, 'config/default.jsonc'));
+  fs.writeFileSync(path.join(target, MARKER), packageVersion(source) + '\n', { mode: 0o600 });
+}
+
+/** The installed npm package that an install directory's dependency link points into, if any. */
+function linkedPackage(root) {
+  let modules;
+  try {
+    modules = fs.realpathSync(path.join(root, 'node_modules'));
+  } catch {
+    return null;
+  }
+  // A global install nests its dependencies in the package; a prefix install hoists them beside it.
+  for (const candidate of [path.dirname(modules), path.join(modules, '@tenphi', 'luna')]) {
+    try {
+      if (JSON.parse(fs.readFileSync(path.join(candidate, 'package.json'), 'utf8')).name === '@tenphi/luna') return candidate;
+    } catch {
+      // Not this layout.
+    }
+  }
+  return null;
+}
+
 if (!checkout && !materialized) {
   if (installRoot === packageRoot || installRoot.startsWith(packageRoot + path.sep)) {
     console.error('LUNA_HOME must be outside the installed npm package.');
     process.exit(1);
   }
   fs.mkdirSync(installRoot, { recursive: true, mode: 0o700 });
-  const marker = path.join(installRoot, '.luna-package-version');
-  const installed = fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim() : '';
-  if (installed !== metadata.version) {
-    // Refresh shipped runtime assets. Local config, credentials and data use separate paths.
-    for (const name of ['bin', 'src', 'dist', 'setup', 'scripts', 'container', 'tsconfig.json', 'package.json', 'pnpm-workspace.yaml', '.nvmrc']) {
-      const source = path.join(packageRoot, name);
-      if (fs.existsSync(source)) fs.cpSync(source, path.join(installRoot, name), { recursive: true });
-    }
-    fs.mkdirSync(path.join(installRoot, 'config'), { recursive: true });
-    fs.copyFileSync(path.join(packageRoot, 'config/default.jsonc'), path.join(installRoot, 'config/default.jsonc'));
-    fs.writeFileSync(marker, metadata.version + '\n', { mode: 0o600 });
-  }
+  if (installedVersion(installRoot) !== packageVersion(packageRoot)) refresh(packageRoot, installRoot);
   const dependencies = path.join(installRoot, 'node_modules');
   let dependencyRoot = packageRoot;
   while (!fs.existsSync(path.join(dependencyRoot, 'node_modules/tsx'))) {
@@ -43,6 +83,11 @@ if (!checkout && !materialized) {
   if (fs.existsSync(dependencies) && fs.lstatSync(dependencies).isSymbolicLink()
       && fs.realpathSync(dependencies) !== fs.realpathSync(dependencyTarget)) fs.unlinkSync(dependencies);
   if (!fs.existsSync(dependencies)) fs.symlinkSync(dependencyTarget, dependencies, 'dir');
+} else if (materialized) {
+  // Started through the install's own copy, as the `~/.local/bin/luna` shortcut does: pick up a
+  // package that `npm install -g` replaced since this install was last refreshed.
+  const source = linkedPackage(installRoot);
+  if (source && installedVersion(installRoot) !== packageVersion(source)) refresh(source, installRoot);
 }
 const loader = path.join(installRoot, 'node_modules/tsx/dist/loader.mjs');
 const result = spawnSync(process.execPath, ['--import', loader, path.join(installRoot, 'src/cli/client.ts'), ...process.argv.slice(2)], { cwd: installRoot, stdio: 'inherit', env: process.env });

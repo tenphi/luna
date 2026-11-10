@@ -31,11 +31,11 @@ luna redeploy            # rebuild after source changes
 
 A code update needs a build and fresh processes. The agent runner is mounted read-only, but Bun does not reload already imported source. `redeploy` recycles agent containers so the next session uses the new code.
 
-For an npm install, upgrade with `npm install -g @tenphi/luna`, invoke the new launcher, then redeploy. Runtime assets refresh in the private install directory; `config/local.jsonc`, `.env`, and `data/` remain separate. Customize through configuration and local skills; use a source checkout for code changes.
+To install a new release, follow [Upgrading](upgrading.md). Customize through configuration and local skills; use a source checkout for code changes.
 
 ## Akno is unavailable
 
-Use `akno doctor` and `akno dream status`. Upgrade, configure, and restart Akno using its own documentation. Luna can disable memory with `luna config memory set --enabled false`; chat and other integrations remain available.
+Use `akno doctor` and `akno dream status`. If `luna health` reports an Akno version mismatch, see [Upgrading](upgrading.md#check-that-they-still-match). Configure and restart Akno using its own documentation. Luna can disable memory with `luna config memory set --enabled false`; chat and other integrations remain available.
 
 ## Logs and backups
 

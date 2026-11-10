@@ -83,8 +83,15 @@ try {
   assert(fs.existsSync(path.join(env.LUNA_HOME, 'dist/index.js')), 'The packaged host must ship prebuilt');
   const state = new Database(path.join(env.LUNA_HOME, 'data/luna.db'), { readonly: true, fileMustExist: true });
   try {
-    assert.equal(state.pragma('user_version', { simple: true }), 1, 'Installed state must start at the public baseline');
-    const tables = state.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(({ name }) => name);
+    assert.equal(
+      state.pragma('user_version', { simple: true }),
+      1,
+      'Installed state must start at the public baseline',
+    );
+    const tables = state
+      .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+      .all()
+      .map(({ name }) => name);
     assert(tables.includes('reports') && tables.includes('roster_notices'), 'The complete current schema is required');
     assert(!tables.includes('schema_version') && !tables.includes('user_roles'), 'Historical schema state shipped');
   } finally {
@@ -96,13 +103,47 @@ try {
   fs.writeFileSync(credentials, 'OPENAI_API_KEY=fixture\n', { mode: 0o600 });
   const sentinel = path.join(env.LUNA_HOME, 'data/preserved.txt');
   fs.writeFileSync(sentinel, 'invented local data\n');
-  fs.writeFileSync(path.join(env.LUNA_HOME, '.luna-package-version'), 'previous-fixture-version');
+  const marker = path.join(env.LUNA_HOME, '.luna-package-version');
+  // Files an older release shipped and this one removed must not survive the refresh: built-in
+  // skills and module instructions are discovered by listing their directories.
+  const retired = [
+    path.join(env.LUNA_HOME, 'container/skills/retired-fixture/SKILL.md'),
+    path.join(env.LUNA_HOME, 'container/agent-runner/src/mcp-tools/retired-fixture.instructions.md'),
+    path.join(env.LUNA_HOME, 'src/retired-fixture.ts'),
+  ];
+  const plantRetired = () => {
+    for (const file of retired) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, 'invented retired asset\n');
+    }
+  };
+  const assertRefreshed = () => {
+    for (const file of retired) assert(!fs.existsSync(file), `A retired asset survived the refresh: ${file}`);
+    assert.equal(fs.readFileSync(marker, 'utf8').trim(), metadata.version);
+    assert.equal(fs.readFileSync(local, 'utf8'), '{"memory":{"enabled":false,"mission":"invented marker"}}\n');
+    assert.equal(fs.readFileSync(credentials, 'utf8'), 'OPENAI_API_KEY=fixture\n');
+    assert.equal(fs.readFileSync(sentinel, 'utf8'), 'invented local data\n');
+  };
+  fs.writeFileSync(marker, 'previous-fixture-version');
+  plantRetired();
   run(['--help']);
-  assert.equal(fs.readFileSync(local, 'utf8'), '{"memory":{"enabled":false,"mission":"invented marker"}}\n');
-  assert.equal(fs.readFileSync(credentials, 'utf8'), 'OPENAI_API_KEY=fixture\n');
-  assert.equal(fs.readFileSync(sentinel, 'utf8'), 'invented local data\n');
+  assertRefreshed();
+  // `luna setup` links ~/.local/bin/luna to the install's own launcher, which may come first on
+  // PATH. That copy must also pick up a package `npm install -g` replaced.
+  fs.writeFileSync(marker, 'previous-fixture-version');
+  plantRetired();
+  assert.match(
+    execFileSync(path.join(env.LUNA_HOME, 'bin/luna'), ['--help'], {
+      cwd: temporary,
+      env,
+      encoding: 'utf8',
+      timeout: 30000,
+    }),
+    /Usage: luna/,
+  );
+  assertRefreshed();
   console.log(
-    'Installed package passed: assets, privacy, CLI, setup help, OpenAI defaults, optional memory, and state-preserving refresh.',
+    'Installed package passed: assets, privacy, CLI, setup help, OpenAI defaults, optional memory, and state-preserving refresh from both launchers.',
   );
 } finally {
   fs.rmSync(temporary, { recursive: true, force: true });

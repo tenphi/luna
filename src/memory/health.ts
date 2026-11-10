@@ -181,15 +181,27 @@ interface Probe {
 
 let inFlight: Probe | null = null;
 
+/**
+ * Akno refuses a client that speaks another wire protocol. That is fixed by upgrading one side, not
+ * by waiting for the service, so say so instead of reporting a plain outage.
+ */
+function unavailableDetail(error: unknown): string {
+  const mismatch = error instanceof Error ? /Akno version mismatch: ([^.]+)/.exec(error.message) : null;
+  return mismatch
+    ? `Akno version mismatch: ${mismatch[1]}. Upgrade Luna or Akno so both speak the same protocol.`
+    : 'Memory connection is unavailable.';
+}
+
 function startProbe(): Probe {
   const connection = { ok: false, writable: false, detail: 'Memory connection is unavailable.' };
   const result = retryRead(async (client) => {
+    const service = client.hello.version ? `Connected to Akno ${client.hello.version}` : 'Connected';
     Object.assign(connection, {
       ok: true,
       writable: client.hello.writable,
       detail: client.hello.writable
-        ? 'Connected; memory reads and writes are available.'
-        : 'Connected; memory is read-only.',
+        ? `${service}; memory reads and writes are available.`
+        : `${service}; memory is read-only.`,
     });
     if (!client.hello.commands?.includes('plan')) {
       return {
@@ -202,7 +214,7 @@ function startProbe(): Probe {
   })
     .catch((error: unknown) => {
       if (isMemoryConnectionLoss(error) || error instanceof MemoryUnavailable) {
-        Object.assign(connection, { ok: false, writable: false, detail: 'Memory connection is unavailable.' });
+        Object.assign(connection, { ok: false, writable: false, detail: unavailableDetail(error) });
       }
       return { ...connection, maintenance: unknown('unavailable', 'Maintenance status could not be read.') };
     })

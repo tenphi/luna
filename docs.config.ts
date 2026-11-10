@@ -46,6 +46,7 @@ export default defineDocsConfig({
         items: [
           { label: 'Configuration', link: '/configuration' },
           { label: 'CLI reference', link: '/api' },
+          { label: 'Upgrading', link: '/upgrading' },
           { label: 'Operations', link: '/guides' },
           { label: 'Security', link: '/security' },
         ],

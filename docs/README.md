@@ -10,7 +10,8 @@ Start with [getting started](getting-started.md) and [everyday use](everyday-use
 | [Akno](akno.md)                        | Optional durable knowledge and its separate setup           |
 | [Configuration](configuration.md)      | Defaults, private overlay, users, and credentials           |
 | [Commands](api.md)                     | Common CLI actions and advanced help                        |
-| [Operations](guides.md)                | Setup recovery, upgrades, logs, and development checks      |
+| [Upgrading](upgrading.md)              | New Luna and Akno releases, version matching, and Node      |
+| [Operations](guides.md)                | Setup recovery, logs, backups, and development checks       |
 | [Security](security.md)                | Trust, permissions, data flow, and release hygiene          |
 | [Architecture](architecture.md)        | Message flow and code ownership                             |
 | [Isolation](isolation-model.md)        | Session and install boundaries                              |

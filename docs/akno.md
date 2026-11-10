@@ -26,7 +26,7 @@ luna redeploy --no-build
 luna health
 ```
 
-The default socket is `~/.akno/akno.sock`. Configure a custom one with `luna config memory set --socket /path/to/akno.sock`.
+The default socket is `~/.akno/akno.sock`. Configure a custom one with `luna config memory set --socket /path/to/akno.sock`. To install new Akno releases later, see [Upgrading](upgrading.md#akno).
 
 ## What Luna adds
 
