@@ -23,8 +23,10 @@ const patterns = [
   ['private key', /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
   ['machine home path', /\/(?:Users|home)\/(?!\b(?:me|user|test|example|node|runner)\b)[A-Za-z][\w.-]+/],
   [
+    // Allowed: Anthropic's co-author address and GitHub's own committer for commits made
+    // through its API, such as the Changesets version commit.
     'non-example email',
-    /\b(?!noreply@anthropic\.com\b)[A-Za-z0-9._%+-]+@(?![\w.-]*\b(?:example\.(?:com|org|net|test)|example|test|invalid|localhost|users\.noreply\.github\.com)\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/i,
+    /\b(?!(?:noreply@anthropic\.com|noreply@github\.com)\b)[A-Za-z0-9._%+-]+@(?![\w.-]*\b(?:example\.(?:com|org|net|test)|example|test|invalid|localhost|users\.noreply\.github\.com)\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/i,
   ],
 ];
 let checked = 0;
