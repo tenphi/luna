@@ -7,5 +7,5 @@ onlyBuiltDependencies:
 minimumReleaseAge: 4320
 # Maintainer-approved exemptions from the release-age gate.
 minimumReleaseAgeExclude:
-  - '@tenphi/akno-client'
-  - '@tenphi/akno-protocol'
+  - '@tenphi/*'
+  - '@uniaria/*'
