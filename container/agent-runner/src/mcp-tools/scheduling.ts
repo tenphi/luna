@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { getSessionClient } from '../session/client.js';
+import { getSessionClient, type TaskRow } from '../session/client.js';
 import { getCurrentInReplyTo, getCurrentTaskRun } from '../current-batch.js';
 import { writeMessageOut } from '../db/messages-out.js';
 import { getSessionRouting } from '../db/session-routing.js';
@@ -61,17 +61,40 @@ export const scheduleTask: McpToolDefinition = {
   },
 };
 
+const PREVIEW = 80;
+function taskPayload(content: string): { prompt: string; script: string | null } {
+  try {
+    const payload = JSON.parse(content);
+    return { prompt: String(payload.prompt ?? ''), script: typeof payload.script === 'string' && payload.script ? payload.script : null };
+  } catch { return { prompt: '', script: null }; }
+}
+const header = (task: TaskRow) => `${task.id} [${task.status}] at=${task.process_after || 'now'}${task.recurrence ? ` recur=${task.recurrence}` : ''}`;
+
 export const listTasks: McpToolDefinition = {
-  tool: { name: 'list_tasks', description: 'Show the live occurrence of each task series; use its id with update_task.', inputSchema: {
-    type: 'object', properties: { status: string('Limit results to pending or paused; omission includes both') },
+  tool: { name: 'list_tasks', description: 'Show the live occurrence of each task series with shortened instructions. Pass taskId to read one series in full before replacing its prompt or script with update_task.', inputSchema: {
+    type: 'object', properties: {
+      status: string('Limit results to pending or paused; omission includes both'),
+      taskId: string('Series id to show in full, with its complete instructions and script'),
+    },
   } },
   async handler(args) {
     const tasks = await getSessionClient().listTasks(typeof args.status === 'string' ? args.status : undefined);
-    const lines: string[] = [];
-    for (const task of tasks) {
-      const payload = JSON.parse(task.content);
-      lines.push(`- ${task.id} [${task.status}] at=${task.process_after || 'now'} ${task.recurrence ? `recur=${task.recurrence} ` : ''}→ ${String(payload.prompt ?? '').slice(0, 80)}`);
+    if (typeof args.taskId === 'string' && args.taskId) {
+      const task = tasks.find((row) => row.id === args.taskId);
+      if (!task) return failure(`no live task matched id "${args.taskId}"`);
+      const { prompt, script } = taskPayload(task.content);
+      return receipt(`${header(task)}\n\nInstructions:\n${prompt}${script ? `\n\nScript:\n${script}` : ''}`);
     }
+    const lines: string[] = [];
+    let shortened = false;
+    for (const task of tasks) {
+      const { prompt, script } = taskPayload(task.content);
+      const flat = normalized(prompt);
+      const cut = flat.length > PREVIEW;
+      shortened ||= cut;
+      lines.push(`- ${header(task)}${script ? ' script=yes' : ''} → ${cut ? `${flat.slice(0, PREVIEW)}… (${prompt.length} chars)` : flat}`);
+    }
+    if (shortened) lines.push('', 'Instructions ending in "…" are shortened. Call list_tasks with taskId for the full text.');
     return receipt(lines.join('\n') || 'No tasks found.');
   },
 };
@@ -79,7 +102,8 @@ export const listTasks: McpToolDefinition = {
 export const updateTask: McpToolDefinition = {
   tool: { name: 'update_task', description: 'Change task instructions, timing, or status. Leave fields out to preserve them.', inputSchema: {
     type: 'object', properties: {
-      taskId: string('Stable series identifier from list_tasks'), prompt: string('Replacement instructions'),
+      taskId: string('Stable series identifier from list_tasks'),
+      prompt: string('Complete replacement instructions. This replaces the whole text, so read it first with list_tasks({ taskId }) and keep what should stay.'),
       processAfter: string('Replacement first-run timestamp, interpreted in the install zone when no offset is given'),
       recurrence: string('Replacement cron expression; an empty string removes repetition'),
       script: string('Replacement pre-task script; an empty string removes it'),
