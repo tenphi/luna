@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.18
+
+### Patch Changes
+
+- [`9d0b2d2`](https://github.com/tenphi/luna/commit/9d0b2d2ef98dec8f6a25fbdce22d5debd325f708) Thanks [@tenphi](https://github.com/tenphi)! - Luna can now read a scheduled task's full instructions (`list_tasks` with a `taskId`) before editing them, so changing a long task such as a daily digest no longer stalls on the shortened list preview or asks you to paste the instructions back.
+
 ## 0.1.17
 
 ### Patch Changes
