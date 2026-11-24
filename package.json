@@ -68,7 +68,7 @@
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
     "@eslint/js": "^10.0.1",
-    "@tenphi/cookbook": "0.33.2",
+    "@tenphi/cookbook": "0.34.1",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.20.5",
     "@types/nodemailer": "^8.0.2",
