@@ -93,6 +93,31 @@ async function subscribe() {
   queuePageWatches(db, ['chg_fixture']);
   await reconcileMemoryPages(db, session);
 }
+/**
+ * `fs.watch` returns before macOS has started a recursive watcher's FSEvents stream, so a save made
+ * at once can be lost. Rewrite the page unchanged until a pass runs on a watch event instead of the
+ * 60-second timer, then let the probe's own late events drain so none can stand in for the save.
+ */
+async function waitForLiveWatch(target: string) {
+  service.command.mockClear();
+  await vi.waitFor(
+    async () => {
+      fs.writeFileSync(target, initial);
+      await reconcileMemoryPages(db, session);
+      expect(service.command, 'the native watcher never reported a write to the page').toHaveBeenCalled();
+    },
+    { timeout: 5000, interval: 50 },
+  );
+  await vi.waitFor(
+    async () => {
+      service.command.mockClear();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await reconcileMemoryPages(db, session);
+      expect(service.command).not.toHaveBeenCalled();
+    },
+    { timeout: 5000, interval: 50 },
+  );
+}
 describe('human memory edit context', () => {
   it('subscribes with receipts off and keeps edits out of real message polling and wake counts', async () => {
     service.notify = 'off';
@@ -209,8 +234,9 @@ describe('human memory edit context', () => {
   });
   it('uses native atomic-save events to invalidate a recent reconciliation', async () => {
     await subscribe();
-    text = 'External atomic save.\n';
     const target = path.join(service.root, file);
+    await waitForLiveWatch(target);
+    text = 'External atomic save.\n';
     fs.writeFileSync(`${target}.tmp`, text);
     fs.renameSync(`${target}.tmp`, target);
     await vi.waitFor(
