@@ -12,6 +12,16 @@ export default defineDocsConfig({
     logo: 'public/luna-icon.png',
     headerLinks: [{ label: 'Get started', link: '/getting-started', variant: 'primary' }],
   },
+  head: [
+    {
+      tag: 'script',
+      attrs: {
+        defer: true,
+        src: 'https://umami.tenphi.me/script.js',
+        'data-website-id': 'e4b4e8cf-d573-4d08-a5a1-d21234901115',
+      },
+    },
+  ],
   content: {
     sources: [
       { file: 'docs/index.md', route: '/' },
